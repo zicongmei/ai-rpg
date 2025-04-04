@@ -4,8 +4,11 @@ import google.auth
 
 
 # 1. Automatically find your default gcloud credentials
-scopes = ['https://www.googleapis.com/auth/generative-language']
-credentials, project = google.auth.default(scopes=scopes)
+# scopes = ['https://www.googleapis.com/auth/generative-language']
+# credentials, project = google.auth.default(scopes=scopes)
+
+
+credentials, project = google.auth.default()
 
 # 2. Configure the Gemini API with these credentials
 genai.configure(api_key=credentials.token)
@@ -40,7 +43,7 @@ def main():
 
     # Initial scene description
     print("Enter initial prompt")
-    initial_prompt = input("> ").strip()
+    initial_prompt = get_player_action()
 
     scene_description = get_gemini_response(initial_prompt)
     if scene_description:
