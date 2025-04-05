@@ -1,8 +1,8 @@
 import os
 import google.generativeai as genai
 import google.auth
-import json # <-- Import json for saving/loading
-import sys # <-- Import sys for exiting on critical errors
+import json  # <-- Import json for saving/loading
+import sys  # <-- Import sys for exiting on critical errors
 
 # --- Constants ---
 # SAVE_FILENAME = "rpg_save.json"
@@ -17,7 +17,18 @@ credentials, project = google.auth.default()
 
 # 2. Configure the Gemini API with these credentials
 genai.configure(api_key=credentials.token)
-model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25')
+
+model_options = {
+    "1": "gemini-2.5-pro-preview-03-25",
+    "2": 'gemini-2.0-flash',
+    "3": "gemini-2.0-flash-lite",
+}
+
+print(model_options)
+print("Choose a model")
+option = input("> ").strip()
+
+model = genai.GenerativeModel(model_options[option])
 
 
 # --- Gemini Interaction ---
@@ -32,22 +43,27 @@ def get_gemini_response(prompt):
         return None
 
 # --- Game Functions ---
+
+
 def display_scene(description):
     """Prints the current scene description to the console."""
     print("\n" + "=" * 40)
     print(description)
     print("=" * 40)
 
+
 def get_player_action():
     """Gets the player's action from the console."""
     return input("> ").strip()
 
 # --- Save/Load Functions ---
+
+
 def save_game(filename, game_state):
     """Saves the current game state to a JSON file."""
     try:
         with open(filename, 'w') as f:
-            json.dump(game_state, f, indent=4) # Use indent for readability
+            json.dump(game_state, f, indent=4)  # Use indent for readability
         print(f"\n💾 Game saved successfully to {filename}!")
         return True
     except IOError as e:
@@ -57,10 +73,11 @@ def save_game(filename, game_state):
         print(f"\nAn unexpected error occurred while saving: {e}")
         return False
 
+
 def load_game(filename):
     """Loads the game state from a JSON file."""
     if not os.path.exists(filename):
-        return None # Return None if save file doesn't exist
+        return None  # Return None if save file doesn't exist
 
     try:
         with open(filename, 'r') as f:
@@ -70,7 +87,7 @@ def load_game(filename):
     except (IOError, json.JSONDecodeError) as e:
         print(f"\nError loading game from {filename}: {e}")
         print("Starting a new game instead.")
-        return None # Return None if loading fails
+        return None  # Return None if loading fails
     except Exception as e:
         print(f"\nAn unexpected error occurred while loading: {e}")
         print("Starting a new game instead.")
@@ -81,6 +98,7 @@ def load_game(filename):
 def main():
     """Runs the text-based RPG game with Gemini."""
     print("Welcome to the Gemini-Powered Text RPG!")
+
     print("Commands: type your action, 'save', 'load' (at start), or 'exit'.")
 
     # --- Try Loading Game ---
@@ -90,29 +108,29 @@ def main():
     if game_state:
         # Validate loaded state (basic check)
         if all(k in game_state for k in ["current_location", "player_inventory", "last_scene"]):
-             print("Resuming your adventure...")
-             current_location = game_state["current_location"]
-             player_inventory = game_state["player_inventory"]
-             scene_description = game_state["last_scene"]
-             loaded_game = True
-             display_scene(scene_description) # Show the loaded scene
+            print("Resuming your adventure...")
+            current_location = game_state["current_location"]
+            player_inventory = game_state["player_inventory"]
+            scene_description = game_state["last_scene"]
+            loaded_game = True
+            display_scene(scene_description)  # Show the loaded scene
         else:
             print("Save file seems corrupted. Starting a new game.")
-            game_state = None # Force new game start
+            game_state = None  # Force new game start
 
     # --- Start New Game if not loaded ---
     if not loaded_game:
         print("\nStarting a new adventure!")
-        current_location = "an unknown location" # More descriptive start
+        current_location = "an unknown location"  # More descriptive start
         player_inventory = []
-        scene_description = None # Initialize scene_description
+        scene_description = None  # Initialize scene_description
 
         # Initial scene generation
         print("\nDescribe the beginning of your adventure (e.g., 'I wake up in a dark forest'):")
         initial_prompt = get_player_action()
         if not initial_prompt or initial_prompt.lower() == 'exit':
-             print("No adventure today? Goodbye!")
-             return
+            print("No adventure today? Goodbye!")
+            return
 
         # Construct a slightly better initial prompt for Gemini
         full_initial_prompt = f"Start a text adventure. The player's initial thought or action is: '{initial_prompt}'. Describe the initial location ({current_location}) vividly, setting the scene and hinting at possible first actions. The player starts with no items."
@@ -137,13 +155,13 @@ def main():
             current_game_state = {
                 "current_location": current_location,
                 "player_inventory": player_inventory,
-                "last_scene": scene_description # Save the last description shown
+                "last_scene": scene_description  # Save the last description shown
             }
             save_game(SAVE_FILENAME, current_game_state)
-            continue # Continue playing after saving
+            continue  # Continue playing after saving
         elif player_action.lower() == "load":
-             print("You can only load a game at the very start.")
-             continue
+            print("You can only load a game at the very start.")
+            continue
 
         # --- Process Player Action with Gemini ---
         # Construct the prompt for Gemini based on the current state and player action
@@ -175,65 +193,72 @@ def main():
             # Consider asking Gemini to output structured data alongside narrative,
             # or use keyword spotting more carefully.
 
-            response_lower = response.lower() # For case-insensitive checks
+            response_lower = response.lower()  # For case-insensitive checks
 
             # Example: Detect taking items
             # Look for phrases like "you pick up", "you take the", "add ... to your inventory"
-            take_keywords = ["you pick up", "you take the", "add ", "acquire the"]
+            take_keywords = ["you pick up",
+                             "you take the", "add ", "acquire the"]
             for keyword in take_keywords:
-                 if keyword in response_lower:
+                if keyword in response_lower:
                     # Try to extract item name after the keyword
                     try:
-                        potential_item = response_lower.split(keyword, 1)[1].split('.')[0].split(',')[0].strip()
+                        potential_item = response_lower.split(keyword, 1)[1].split('.')[
+                            0].split(',')[0].strip()
                         # Basic filtering of common words
                         if potential_item and len(potential_item) > 2 and potential_item not in ["it", "the", "a", "an", "nothing", "something"]:
-                             # Avoid adding duplicates if mentioned again
-                             if potential_item not in player_inventory:
-                                 player_inventory.append(potential_item)
-                                 print(f"\n[Inventory updated: Added '{potential_item}']")
-                                 break # Stop after finding one item per response
+                            # Avoid adding duplicates if mentioned again
+                            if potential_item not in player_inventory:
+                                player_inventory.append(potential_item)
+                                print(
+                                    f"\n[Inventory updated: Added '{potential_item}']")
+                                break  # Stop after finding one item per response
                     except IndexError:
-                        pass # Ignore if split fails
-
+                        pass  # Ignore if split fails
 
             # Example: Detect location changes
             # Look for phrases like "you travel to", "you enter the", "arrive at"
-            move_keywords = ["you travel to", "you enter the", "you arrive at", "you are now in", "step into the"]
+            move_keywords = ["you travel to", "you enter the",
+                             "you arrive at", "you are now in", "step into the"]
             for keyword in move_keywords:
                 if keyword in response_lower:
-                     try:
-                        potential_location = response_lower.split(keyword, 1)[1].split('.')[0].split(',')[0].strip()
+                    try:
+                        potential_location = response_lower.split(keyword, 1)[1].split('.')[
+                            0].split(',')[0].strip()
                         if potential_location and len(potential_location) > 3:
-                             current_location = potential_location # Update location
-                             print(f"\n[Location updated: Now at '{current_location}']")
-                             break # Stop after finding one location change
-                     except IndexError:
-                         pass
+                            current_location = potential_location  # Update location
+                            print(
+                                f"\n[Location updated: Now at '{current_location}']")
+                            break  # Stop after finding one location change
+                    except IndexError:
+                        pass
 
             # Example: Detect dropping/using items (Remove from inventory)
             # Look for phrases like "you drop the", "you use the", "is gone from your inventory"
-            remove_keywords = ["you drop the", "you use the", "item disappears", "breaks the", "no longer have the"]
+            remove_keywords = ["you drop the", "you use the",
+                               "item disappears", "breaks the", "no longer have the"]
             items_to_remove = []
             for keyword in remove_keywords:
                 if keyword in response_lower:
                     # Check if any inventory item is mentioned shortly after the keyword
                     # This is very approximate!
-                    relevant_part = response_lower.split(keyword, 1)[1][:50] # Check next 50 chars
+                    relevant_part = response_lower.split(
+                        keyword, 1)[1][:50]  # Check next 50 chars
                     for item in player_inventory:
                         if item in relevant_part:
-                             if item not in items_to_remove:
+                            if item not in items_to_remove:
                                 items_to_remove.append(item)
 
             if items_to_remove:
                 for item in items_to_remove:
-                    if item in player_inventory: # Check again, might have been removed by another keyword
-                         player_inventory.remove(item)
-                         print(f"\n[Inventory updated: Removed '{item}']")
-
+                    if item in player_inventory:  # Check again, might have been removed by another keyword
+                        player_inventory.remove(item)
+                        print(f"\n[Inventory updated: Removed '{item}']")
 
         else:
             print("The AI seems unresponsive. Please try your action again.")
             # Keep the old scene_description if the response failed
+
 
 if __name__ == "__main__":
     main()
