@@ -104,19 +104,28 @@ def main():
     # --- Try Loading Game ---
     game_state = load_game(SAVE_FILENAME)
     loaded_game = False
+    chat_history = []  # Initialize chat history
 
     if game_state:
         # Validate loaded state (basic check)
-        if all(k in game_state for k in ["current_location", "player_inventory", "last_scene"]):
+        if all(k in game_state for k in ["current_location", "player_inventory", "last_scene", "chat_history"]):
             print("Resuming your adventure...")
             current_location = game_state["current_location"]
             player_inventory = game_state["player_inventory"]
             scene_description = game_state["last_scene"]
+            chat_history = game_state["chat_history"]
             loaded_game = True
             display_scene(scene_description)  # Show the loaded scene
+            # Print loaded chat history (optional)
+            if chat_history:
+                print("\n--- Loaded Chat History ---")
+                for entry in chat_history:
+                    print(f"{entry['role']}: {entry['content']}")
+                print("--- End of Loaded Chat History ---")
         else:
             print("Save file seems corrupted. Starting a new game.")
             game_state = None  # Force new game start
+            chat_history = []  # Reset chat history for new game
 
     # --- Start New Game if not loaded ---
     if not loaded_game:
@@ -132,12 +141,18 @@ def main():
             print("No adventure today? Goodbye!")
             return
 
+        # Add initial player prompt to chat history
+        chat_history.append({"role": "user", "content": initial_prompt})
+
         # Construct a slightly better initial prompt for Gemini
         full_initial_prompt = f"Start a text adventure. The player's initial thought or action is: '{initial_prompt}'. Describe the initial location ({current_location}) vividly, setting the scene and hinting at possible first actions. The player starts with no items."
-        scene_description = get_gemini_response(full_initial_prompt)
+        response_text = get_gemini_response(full_initial_prompt)
 
-        if scene_description:
+        if response_text:
+            scene_description = response_text
             display_scene(scene_description)
+            # Add Gemini's response to chat history
+            chat_history.append({"role": "model", "content": scene_description})
         else:
             print("Failed to get the initial scene description from Gemini. Exiting.")
             return
@@ -155,7 +170,8 @@ def main():
             current_game_state = {
                 "current_location": current_location,
                 "player_inventory": player_inventory,
-                "last_scene": scene_description  # Save the last description shown
+                "last_scene": scene_description,
+                "chat_history": chat_history  # Save the chat history
             }
             save_game(SAVE_FILENAME, current_game_state)
             continue  # Continue playing after saving
@@ -164,11 +180,20 @@ def main():
             continue
 
         # --- Process Player Action with Gemini ---
+        # Add player's action to chat history
+        chat_history.append({"role": "user", "content": player_action})
+
         # Construct the prompt for Gemini based on the current state and player action
         prompt = f"""
         Current situation: The player is at '{current_location}'.
         Player inventory: {', '.join(player_inventory) or 'nothing'}.
         Previous description: {scene_description}
+        Chat History:
+        """
+        for entry in chat_history[-5:]:  # Include last 5 turns of history
+            prompt += f"\n{entry['role']}: {entry['content']}"
+
+        prompt += f"""
 
         Player's action: '{player_action}'
 
@@ -181,10 +206,13 @@ def main():
         # Important Note: Don't explicitly tell Gemini to change location/inventory in the prompt,
         # let it describe the outcome naturally. We will parse its response below.
 
-        response = get_gemini_response(prompt)
-        if response:
+        response_text = get_gemini_response(prompt)
+        if response_text:
+            # Add Gemini's response to chat history
+            chat_history.append({"role": "model", "content": response_text})
+
             # Update the current scene description *before* parsing state changes
-            scene_description = response
+            scene_description = response_text
             display_scene(scene_description)
 
             # --- Update Game State Based on Gemini's Response (Simple Parsing) ---
@@ -193,7 +221,7 @@ def main():
             # Consider asking Gemini to output structured data alongside narrative,
             # or use keyword spotting more carefully.
 
-            response_lower = response.lower()  # For case-insensitive checks
+            response_lower = response_text.lower()  # For case-insensitive checks
 
             # Example: Detect taking items
             # Look for phrases like "you pick up", "you take the", "add ... to your inventory"
