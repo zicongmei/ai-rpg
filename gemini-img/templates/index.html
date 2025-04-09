@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Text RPG</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #555; }
+        .scene { background-color: #e9e9e9; border-left: 5px solid #007bff; padding: 15px; margin-bottom: 20px; white-space: pre-wrap; /* Preserve line breaks */ }
+        .status { margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; }
+        .status p { margin: 5px 0; }
+        .status strong { color: #0056b3; }
+        .inventory ul { list-style: none; padding: 0; }
+        .inventory li { background-color: #d4edda; color: #155724; padding: 5px 10px; margin-bottom: 5px; border-radius: 4px; display: inline-block; margin-right: 5px;}
+        .chat-history { max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background: #fdfdfd; }
+        .chat-history div { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dotted #eee; }
+        .chat-history .user { color: green; font-weight: bold; }
+        .chat-history .model { color: blue; }
+        .chat-history .model::before { content: "Narrator: "; font-weight: bold; }
+        .chat-history .user::before { content: "You: "; font-weight: bold; }
+        .action-form input[type="text"] { width: calc(100% - 100px); padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-right: 5px; }
+        .action-form button { padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .action-form button:hover { background-color: #218838; }
+        .game-controls { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
+        .game-controls form { display: flex; align-items: center; gap: 5px; background-color: #f0f0f0; padding: 10px; border-radius: 4px;}
+        .game-controls input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .game-controls button { padding: 8px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .save-button { background-color: #007bff; }
+        .save-button:hover { background-color: #0056b3; }
+        .load-button { background-color: #ffc107; color: #333; }
+        .load-button:hover { background-color: #e0a800; }
+        .quit-button { background-color: #dc3545; }
+        .quit-button:hover { background-color: #c82333; }
+        .new-game-form button { background-color: #17a2b8; }
+        .new-game-form button:hover { background-color: #117a8b; }
+        .flashes { list-style: none; padding: 0; margin-bottom: 15px; }
+        .flashes li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
+        .flashes .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flashes .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flashes .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .flashes .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .update-messages { font-style: italic; color: #666; margin-top: 10px; }
+        .update-messages div { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gemini Text RPG</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <ul class=flashes>
+            {% for category, message in messages %}
+              <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+            </ul>
+          {% endif %}
+        {% endwith %}
+
+        <div class="game-controls">
+            {% if not game_active %}
+            <form action="{{ url_for('new_game') }}" method="post" class="new-game-form">
+                <input type="text" name="initial_prompt" placeholder="Describe your adventure's start..." required size="30">
+                <button type="submit">Start New Game</button>
+            </form>
+            {% endif %}
+
+            <form action="{{ url_for('load_game') }}" method="post">
+                <input type="text" name="load_filename" placeholder="Load filename" required>
+                <button type="submit" class="load-button">Load Game</button>
+            </form>
+
+            {% if game_active %}
+            <form action="{{ url_for('save_game') }}" method="post">
+                <input type="text" name="save_filename" placeholder="Save filename" required>
+                <button type="submit" class="save-button">Save Game</button>
+            </form>
+            {% endif %}
+
+             {% if game_active %}
+            <form action="{{ url_for('quit_game') }}" method="post">
+                 <button type="submit" class="quit-button">Quit Game</button>
+            </form>
+            {% endif %}
+        </div>
+
+        <hr>
+
+        {% if game_active %}
+            <h2>Current Scene</h2>
+            <div class="status">
+                <p><strong>Location:</strong> {{ location }}</p>
+                <div class="inventory">
+                    <strong>Inventory:</strong>
+                    {% if inventory %}
+                        <ul>
+                        {% for item in inventory %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <span>Empty</span>
+                    {% endif %}
+                </div>
+                 {% if update_messages %}
+                 <div class="update-messages">
+                    <strong>System Messages:</strong>
+                    {% for msg in update_messages %}
+                         <div>{{ msg }}</div>
+                    {% endfor %}
+                 </div>
+                 {% endif %}
+            </div>
+
+            <div class="scene">
+                {{ scene }}
+            </div>
+
+            <h2>Your Action</h2>
+            <form action="{{ url_for('handle_action') }}" method="post" class="action-form">
+                <input type="text" name="action" placeholder="What do you do?" required autofocus>
+                <button type="submit">Send</button>
+            </form>
+
+            <h2>Game History</h2>
+            <div class="chat-history" id="chat-history">
+                {% for entry in chat_history %}
+                    <div class="{{ entry.role }}">
+                         <span class="content">{{ entry.content | replace('\n', '<br>') | safe }}</span>
+                    </div>
+                {% endfor %}
+            </div>
+            <script>
+                // Auto-scroll chat history to the bottom
+                var chatHistory = document.getElementById('chat-history');
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            </script>
+
+        {% elif not get_flashed_messages() %}
+            <p>Start a new game or load a saved one using the controls above.</p>
+        {% endif %}
+
+    </div>
+</body>
+</html>
