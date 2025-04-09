@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini RPG Adventure</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            min-height: 95vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 {
+            text-align: center;
+            color: #444;
+        }
+
+        .scene {
+            background-color: #e9e9e9;
+            border-left: 5px solid #5cb85c;
+            padding: 15px;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            /* Preserve line breaks from Gemini */
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+            color: #555;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .inventory ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .inventory li {
+            display: inline-block;
+            background-color: #eee;
+            padding: 2px 8px;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            border-radius: 4px;
+        }
+
+        .action-form {
+            display: flex;
+            margin-top: auto;
+            /* Pushes form to bottom */
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .action-form input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .action-form button {
+            padding: 10px 15px;
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .action-form button:hover {
+            background-color: #4cae4c;
+        }
+
+        .game-controls {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .game-controls form {
+            display: inline-block;
+            /* Keep buttons side-by-side */
+            margin: 0 5px;
+        }
+
+        .game-controls button {
+            padding: 8px 12px;
+            background-color: #f0ad4e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .game-controls button.new-game {
+            background-color: #d9534f;
+        }
+
+        .game-controls button:hover {
+            opacity: 0.9;
+        }
+
+        .flashes {
+            list-style: none;
+            padding: 0;
+            margin-bottom: 15px;
+        }
+
+        .flashes li {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .flashes .info {
+            background-color: #d9edf7;
+            color: #31708f;
+            border: 1px solid #bce8f1;
+        }
+
+        .flashes .success {
+            background-color: #dff0d8;
+            color: #3c763d;
+            border: 1px solid #d6e9c6;
+        }
+
+        .flashes .warning {
+            background-color: #fcf8e3;
+            color: #8a6d3b;
+            border: 1px solid #faebcc;
+        }
+
+        .flashes .error {
+            background-color: #f2dede;
+            color: #a94442;
+            border: 1px solid #ebccd1;
+        }
+
+        .chat-history {
+            max-height: 200px;
+            /* Limit height */
+            overflow-y: auto;
+            /* Add scrollbar */
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 15px;
+            font-size: 0.85em;
+        }
+
+        .chat-history p {
+            margin: 5px 0;
+            border-bottom: 1px dashed #eee;
+            padding-bottom: 5px;
+        }
+
+        .chat-history .user {
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .chat-history .model {
+            color: #666;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Gemini RPG Adventure</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <ul class=flashes>
+            {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+        {% endwith %}
+
+        <div class="game-controls">
+            <form action="{{ url_for('save_current_game') }}" method="post" style="display: inline;">
+                <button type="submit">💾 Save Game</button>
+            </form>
+            <form action="{{ url_for('start_new_game_route') }}" method="post" style="display: inline;">
+                <button type="submit" class="new-game">🔄 Start New Game</button>
+            </form>
+        </div>
+
+        <div class="game-info">
+            <div class="location"><strong>Location:</strong> {{ location }}</div>
+            <div class="inventory">
+                <strong>Inventory:</strong>
+                {% if inventory %}
+                <ul>
+                    {% for item in inventory %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <span>Nothing</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="scene">
+            {{ scene }}
+        </div>
+
+        <details class="chat-history-details">
+            <summary style="cursor: pointer; margin-bottom: 10px;">Show/Hide Chat History</summary>
+            <div class="chat-history">
+                {% for entry in history %}
+                <p><span class="{{ entry.role }}">{{ entry.role.capitalize() }}:</span> {{ entry.content }}</p>
+                {% else %}
+                <p>No history yet.</p>
+                {% endfor %}
+            </div>
+        </details>
+
+
+        <form action="{{ url_for('handle_action') }}" method="post" class="action-form">
+            <input type="text" name="action_input" placeholder="What do you do next?" autofocus required>
+            <button type="submit">Send Action</button>
+        </form>
+    </div>
+
+    <script>
+        // Optional: Scroll chat history to bottom on load/update
+        const chatHistory = document.querySelector('.chat-history');
+        if (chatHistory) {
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    </script>
+
+</body>
+
+</html>
