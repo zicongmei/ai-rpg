@@ -3,145 +3,174 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Text RPG</title>
+    <title>Gemini RPG Adventure</title>
     <style>
-        body { font-family: sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; color: #333; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        h1, h2 { color: #555; }
-        .scene { background-color: #e9e9e9; border-left: 5px solid #007bff; padding: 15px; margin-bottom: 20px; white-space: pre-wrap; /* Preserve line breaks */ }
-        .status { margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; }
-        .status p { margin: 5px 0; }
-        .status strong { color: #0056b3; }
-        .inventory ul { list-style: none; padding: 0; }
-        .inventory li { background-color: #d4edda; color: #155724; padding: 5px 10px; margin-bottom: 5px; border-radius: 4px; display: inline-block; margin-right: 5px;}
-        .chat-history { max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background: #fdfdfd; }
-        .chat-history div { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dotted #eee; }
-        .chat-history .user { color: green; font-weight: bold; }
-        .chat-history .model { color: blue; }
-        .chat-history .model::before { content: "Narrator: "; font-weight: bold; }
-        .chat-history .user::before { content: "You: "; font-weight: bold; }
-        .action-form input[type="text"] { width: calc(100% - 100px); padding: 10px; border: 1px solid #ccc; border-radius: 4px; margin-right: 5px; }
-        .action-form button { padding: 10px 15px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .action-form button:hover { background-color: #218838; }
-        .game-controls { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
-        .game-controls form { display: flex; align-items: center; gap: 5px; background-color: #f0f0f0; padding: 10px; border-radius: 4px;}
-        .game-controls input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        .game-controls button { padding: 8px 12px; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .save-button { background-color: #007bff; }
-        .save-button:hover { background-color: #0056b3; }
-        .load-button { background-color: #ffc107; color: #333; }
-        .load-button:hover { background-color: #e0a800; }
-        .quit-button { background-color: #dc3545; }
-        .quit-button:hover { background-color: #c82333; }
-        .new-game-form button { background-color: #17a2b8; }
-        .new-game-form button:hover { background-color: #117a8b; }
-        .flashes { list-style: none; padding: 0; margin-bottom: 15px; }
-        .flashes li { padding: 10px 15px; margin-bottom: 10px; border-radius: 4px; }
-        .flashes .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .flashes .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .flashes .warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
-        .flashes .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        .update-messages { font-style: italic; color: #666; margin-top: 10px; }
-        .update-messages div { margin-bottom: 5px; }
+        /* ... (keep existing styles) ... */
+        .image-generation-section { margin-top: 20px; padding: 15px; border: 1px dashed #ccc; border-radius: 4px; }
+        .image-generation-section h3 { margin-top: 0; color: #555;}
+        #image-display-container { margin-top: 15px; min-height: 100px; /* Placeholder space */ background-color: #eee; border-radius: 4px; display: flex; justify-content: center; align-items: center; text-align: center; color: #666; }
+        #generated-image { max-width: 100%; max-height: 400px; /* Limit image size */ display: none; /* Hide initially */ }
+        #image-placeholder-text { display: block; /* Show initially */ }
+        #image-error-message { color: #dc3545; font-weight: bold; display: none; /* Hide initially */ }
+        #loading-spinner { display: none; margin-left: 10px; /* Simple text spinner */ font-style: italic; color: #555; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Gemini Text RPG</h1>
+        <h1>Gemini RPG Adventure</h1>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            <ul class=flashes>
-            {% for category, message in messages %}
-              <li class="{{ category }}">{{ message }}</li>
-            {% endfor %}
-            </ul>
-          {% endif %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="feedback {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
         {% endwith %}
 
-        <div class="game-controls">
-            {% if not game_active %}
-            <form action="{{ url_for('new_game') }}" method="post" class="new-game-form">
-                <input type="text" name="initial_prompt" placeholder="Describe your adventure's start..." required size="30">
-                <button type="submit">Start New Game</button>
-            </form>
-            {% endif %}
-
-            <form action="{{ url_for('load_game') }}" method="post">
-                <input type="text" name="load_filename" placeholder="Load filename" required>
-                <button type="submit" class="load-button">Load Game</button>
-            </form>
-
-            {% if game_active %}
-            <form action="{{ url_for('save_game') }}" method="post">
-                <input type="text" name="save_filename" placeholder="Save filename" required>
-                <button type="submit" class="save-button">Save Game</button>
-            </form>
-            {% endif %}
-
-             {% if game_active %}
-            <form action="{{ url_for('quit_game') }}" method="post">
-                 <button type="submit" class="quit-button">Quit Game</button>
-            </form>
-            {% endif %}
-        </div>
-
-        <hr>
-
-        {% if game_active %}
-            <h2>Current Scene</h2>
-            <div class="status">
-                <p><strong>Location:</strong> {{ location }}</p>
-                <div class="inventory">
-                    <strong>Inventory:</strong>
-                    {% if inventory %}
-                        <ul>
-                        {% for item in inventory %}
-                            <li>{{ item }}</li>
-                        {% endfor %}
-                        </ul>
-                    {% else %}
-                        <span>Empty</span>
-                    {% endif %}
-                </div>
-                 {% if update_messages %}
-                 <div class="update-messages">
-                    <strong>System Messages:</strong>
-                    {% for msg in update_messages %}
-                         <div>{{ msg }}</div>
-                    {% endfor %}
-                 </div>
-                 {% endif %}
-            </div>
-
-            <div class="scene">
-                {{ scene }}
-            </div>
-
-            <h2>Your Action</h2>
-            <form action="{{ url_for('handle_action') }}" method="post" class="action-form">
-                <input type="text" name="action" placeholder="What do you do?" required autofocus>
-                <button type="submit">Send</button>
-            </form>
-
-            <h2>Game History</h2>
-            <div class="chat-history" id="chat-history">
-                {% for entry in chat_history %}
-                    <div class="{{ entry.role }}">
-                         <span class="content">{{ entry.content | replace('\n', '<br>') | safe }}</span>
-                    </div>
-                {% endfor %}
-            </div>
-            <script>
-                // Auto-scroll chat history to the bottom
-                var chatHistory = document.getElementById('chat-history');
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-            </script>
-
-        {% elif not get_flashed_messages() %}
-            <p>Start a new game or load a saved one using the controls above.</p>
+        {% if feedback %}
+             {% for msg in feedback %}
+                  <p class="system-feedback">{{ msg }}</p> {# Display all feedback from the list #}
+             {% endfor %}
         {% endif %}
 
+
+        {% if game_state %}
+            <h2>Current Scene</h2>
+            <div class="scene">
+                {{ game_state.last_scene }}
+            </div>
+
+            <div class="inventory">
+                 <strong>Inventory:</strong>
+                 {% if game_state.player_inventory %}
+                     <ul>{% for item in game_state.player_inventory %}<li>{{ item }}</li>{% endfor %}</ul>
+                 {% else %}<span>Empty</span>{% endif %}
+            </div>
+
+            <div class="actions">
+                 <form method="POST" action="{{ url_for('index') }}">
+                     <input type="text" name="action" placeholder="What do you do next?" required autofocus>
+                     <button type="submit">Send</button>
+                 </form>
+            </div>
+
+             <div class="image-generation-section">
+                 <h3>Scene Visualization (Imagen)</h3>
+                 <button id="generate-image-btn">Generate Image</button>
+                 <span id="loading-spinner">Generating image...</span>
+                 <div id="image-display-container">
+                      <span id="image-placeholder-text">Click the button to generate an image based on the current scene.</span>
+                      <img id="generated-image" alt="Generated Scene Image">
+                      <span id="image-error-message"></span>
+                 </div>
+                 <p><small>Image generated using Vertex AI Imagen. Generation may take a moment and incurs costs.</small></p>
+            </div>
+            <hr>
+
+            <div class="file-ops">
+                 <h2>Save / Load Game</h2>
+                  <p><small>Files are saved/loaded from your user's `rpg_saves` directory.</small></p>
+                 <form method="POST" action="{{ url_for('save_game_route') }}">
+                     <input type="text" name="filename" placeholder="Save filename (e.g., forest_save)" required>
+                     <button type="submit">Save Game</button>
+                 </form>
+                 <form method="POST" action="{{ url_for('load_game_route') }}">
+                     <input type="text" name="filename" placeholder="Load filename (e.g., forest_save)" required>
+                     <button type="submit">Load Game</button>
+                 </form>
+            </div>
+
+            <div class="quit-form">
+                 <form method="POST" action="{{ url_for('quit_game') }}" onsubmit="return confirm('Are you sure you want to end the current game?');">
+                     <button type="submit">Quit Current Game</button>
+                  </form>
+            </div>
+
+        {% else %}
+            <h2>Start Your Adventure</h2>
+            <div class="actions">
+                 <form method="POST" action="{{ url_for('new_game') }}">
+                     <input type="text" name="initial_prompt" placeholder="Describe your first action or thought (e.g., 'I wake up in a dark cave')" required autofocus size="50">
+                     <button type="submit">Start New Game</button>
+                 </form>
+             </div>
+             <hr>
+             <div class="file-ops">
+                  <h2>Load Existing Game</h2>
+                   <p><small>Files are loaded from your user's `rpg_saves` directory.</small></p>
+                  <form method="POST" action="{{ url_for('load_game_route') }}">
+                     <input type="text" name="filename" placeholder="Load filename (e.g., forest_save)" required>
+                     <button type="submit">Load Game</button>
+                 </form>
+             </div>
+        {% endif %}
     </div>
-</body>
+
+    <script>
+        const generateBtn = document.getElementById('generate-image-btn');
+        const imageContainer = document.getElementById('image-display-container');
+        const imgElement = document.getElementById('generated-image');
+        const placeholderText = document.getElementById('image-placeholder-text');
+        const errorMessage = document.getElementById('image-error-message');
+        const spinner = document.getElementById('loading-spinner');
+
+        if (generateBtn) {
+            generateBtn.addEventListener('click', () => {
+                // Reset display elements
+                spinner.style.display = 'inline';
+                imgElement.style.display = 'none'; // Hide previous image
+                placeholderText.style.display = 'none'; // Hide placeholder
+                errorMessage.style.display = 'none'; // Hide previous error
+                generateBtn.disabled = true;
+
+                // Fetch from the updated route
+                fetch("{{ url_for('generate_image_route') }}", { // Updated route name
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => {
+                    // Check if response is ok (status in the range 200-299)
+                    if (!response.ok) {
+                        // If not ok, parse the JSON body for error message
+                         return response.json().then(errData => {
+                            // Throw an error with the message from the server response
+                            throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
+                         }).catch(parseError => {
+                            // If parsing the error JSON fails, throw a generic HTTP error
+                            console.error("Failed to parse error response:", parseError);
+                            throw new Error(`HTTP error! Status: ${response.status}`);
+                         });
+                    }
+                     // If response is ok, parse the JSON body for image data
+                    return response.json();
+                 })
+                .then(data => {
+                    if (data.image_data) {
+                        // Set the image source to the base64 data URL
+                        imgElement.src = `data:image/png;base64,${data.image_data}`;
+                        imgElement.style.display = 'block'; // Show image
+                    } else if (data.error) {
+                         // This case might be redundant if handled by the !response.ok check, but good as a fallback
+                         throw new Error(data.error);
+                    } else {
+                         // Unexpected case: successful response but no image data or error
+                         throw new Error("Received unexpected response from server.");
+                    }
+                })
+                .catch(error => {
+                    console.error('Error generating/fetching image:', error);
+                    errorMessage.textContent = `Error: ${error.message}`;
+                    errorMessage.style.display = 'block'; // Show error message
+                    placeholderText.style.display = 'block'; // Show placeholder text again on error
+                })
+                .finally(() => {
+                     spinner.style.display = 'none';
+                     generateBtn.disabled = false;
+                });
+            });
+        }
+    </script>
+    </body>
 </html>
