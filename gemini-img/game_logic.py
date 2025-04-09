@@ -61,6 +61,7 @@ try:
     # The specific 'imagen-3.0-generate-002' might require checking Vertex AI docs for the exact SDK identifier.
     # Using 'imagegeneration@006' as a robust fallback. Change if you confirm the exact identifier.
     imagen_model_name = "imagegeneration@006" # Or try the specific one if confirmed available via SDK
+    imagen_model_name = 'imagen-3.0-generate-002'
     print(f"Using Imagen model: {imagen_model_name}")
     imagen_model = ImageGenerationModel.from_pretrained(imagen_model_name)
 
@@ -116,22 +117,37 @@ def generate_image_with_imagen(scene_description):
         images: ImageGenerationResponse = imagen_model.generate_images(
             prompt=image_prompt,
             number_of_images=1, # Generate one image
-            aspect_ratio="16:9", # Or "1:1", "9:16" etc.
+            # aspect_ratio="16:9", # Or "1:1", "9:16" etc.
             # seed=12345 # Optional: for reproducibility
             # negative_prompt="text, words, letters, blurry, low quality" # Optional
         )
+
+        # if images.images:
+        #     # Option 1: Save the image to a file
+        #     image_bytes = images.images[0]._image_bytes # Access raw bytes
+        #     with open("generated_image.png", "wb") as f:
+        #         f.write(image_bytes)
+        #     print("Image saved to generated_image.png")
+
+        #     # Option 2: Get a GCS URI if generated directly to Cloud Storage
+        #     # gcs_uri = response.images[0]._gcs_uri
+        #     # print(f"Image generated at: {gcs_uri}") # Usually requires specifying output GCS bucket in call
+
+        # else:
+        #     print("Image generation failed or returned no images.")
+        #     # Check response object for error details if available
 
         if images.images:
             # 3. Process the result - Get Base64 data
             image_obj = images.images[0] # Get the first (and only) image object
             # Access image bytes directly if available
-            if hasattr(image_obj, '_blob'):
-                 image_bytes = image_obj._blob
+            if hasattr(image_obj, '_image_bytes'):
+                 image_bytes = image_obj._image_bytes
                  b64_image_data = base64.b64encode(image_bytes).decode('utf-8')
                  print("Successfully generated image and encoded to base64.")
                  return b64_image_data, None # Return data, no error
             else:
-                 print("ERROR: Could not access image bytes (_blob attribute missing). Check SDK version/response structure.")
+                 print("ERROR: Could not access image bytes (_image_bytes attribute missing). Check SDK version/response structure.")
                  return None, "Failed to process generated image data."
 
         else:
