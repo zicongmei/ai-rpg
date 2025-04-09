@@ -1,6 +1,7 @@
 # app.py
 import os
 from flask import Flask, render_template, request, session, redirect, url_for, flash
+import markdown
 
 # Import the game logic functions
 from rpg_logic import (
@@ -12,77 +13,163 @@ from rpg_logic import (
 )
 
 app = Flask(__name__)
-# Secret key is needed for session management. Change this to a random string!
-# You can generate one using: python -c 'import secrets; print(secrets.token_hex())'
 app.secret_key = os.environ.get(
     "FLASK_SECRET_KEY", "a_very_default_and_insecure_secret_key")
 
-# --- Flask Routes ---
+# --- Model Configuration ---
+# ***** UPDATE THIS SECTION *****
+AVAILABLE_MODELS = {
+    # Using tuples: (display_name, model_id)
+    "Flash (Fastest)": "gemini-2.0-flash-lite",  # Updated
+    "Balanced": 'gemini-2.0-flash',             # Updated
+    "Pro": "gemini-2.5-pro-preview-03-25",      # Updated
+}
+# Update the default model ID to one from the new list
+# Changed default to the new 'Balanced' model
+DEFAULT_MODEL_ID = 'gemini-2.0-flash'
+# ***** END OF UPDATE SECTION *****
 
+# Fallback logic in case default is somehow not in the list
+if DEFAULT_MODEL_ID not in AVAILABLE_MODELS.values():
+    try:
+        DEFAULT_MODEL_ID = list(AVAILABLE_MODELS.values())[
+            0]  # Use the first available as fallback
+        print(
+            f"Warning: Default model ID '{DEFAULT_MODEL_ID}' was not found in AVAILABLE_MODELS. Falling back to first option.")
+    except IndexError:
+        # This should not happen if AVAILABLE_MODELS is defined, but handle defensively
+        print("FATAL ERROR: AVAILABLE_MODELS is empty. Cannot set a default model.")
+        # In a real app, you might exit or raise a more specific configuration error here
+        DEFAULT_MODEL_ID = None  # Or handle error more gracefully
+
+
+# --- Default Initial Prompt ---
+DEFAULT_INITIAL_PROMPT = "I wake up in a dimly lit clearing."
+
+
+# --- Flask Routes ---
+# ... (rest of the app.py code remains exactly the same) ...
 
 @app.route('/', methods=['GET'])
 def index():
     """Displays the main game page."""
-    # Check if game state exists in session
+    # Use the potentially updated DEFAULT_MODEL_ID
+    current_model_id = session.get('model_name', DEFAULT_MODEL_ID)
+
+    # If default model somehow became None, handle it
+    if not current_model_id and DEFAULT_MODEL_ID:
+        current_model_id = DEFAULT_MODEL_ID
+    elif not current_model_id and not DEFAULT_MODEL_ID:
+        # Critical error state - cannot proceed without a model
+        flash("FATAL ERROR: No valid default AI model configured. Application cannot run.", "error")
+        # Render a minimal error page or return an error response
+        return "Internal Server Error: AI Model Configuration Missing", 500
+
+    if current_model_id not in AVAILABLE_MODELS.values():
+        flash(
+            f"Model '{current_model_id}' no longer available, resetting to default.", "warning")
+        current_model_id = DEFAULT_MODEL_ID
+        session['model_name'] = current_model_id
+        session.pop('game_state', None)
+
     if 'game_state' not in session:
-        # Try loading from file first
         loaded_state, message = load_game(SAVE_FILENAME)
         if loaded_state:
-            session['game_state'] = loaded_state
-            flash(message, 'info')  # Show load message
+            loaded_model = loaded_state.get("model_name")
+            # Check against the *new* AVAILABLE_MODELS
+            if loaded_model and loaded_model in AVAILABLE_MODELS.values():
+                session['game_state'] = loaded_state
+                session['model_name'] = loaded_model
+                current_model_id = loaded_model
+                flash(f"{message} (Model: {loaded_model})", 'info')
+            elif loaded_model:
+                flash(
+                    f"{message}, but saved model '{loaded_model}' is not available. Starting new game with default.", 'warning')
+                session['model_name'] = DEFAULT_MODEL_ID
+                session['game_state'] = start_new_game(
+                    DEFAULT_MODEL_ID, DEFAULT_INITIAL_PROMPT)
+            else:
+                flash(
+                    f"{message}, but save file is old format. Starting new game with default model.", "warning")
+                session['model_name'] = DEFAULT_MODEL_ID
+                session['game_state'] = start_new_game(
+                    DEFAULT_MODEL_ID, DEFAULT_INITIAL_PROMPT)
         else:
-            # Start a new game if no save or load failed
-            session['game_state'] = start_new_game()
-            flash("No save file found or load failed. Starting a new adventure!", 'info')
+            flash(
+                "Choose your model and starting scenario below, then click 'Start New Game'.", 'info')
 
-    # Get current state for rendering
-    game_state = session.get('game_state', {})  # Use .get for safety
-    scene = game_state.get('last_scene', "Error: Scene not found.")
-    # Format chat history for display (optional, can be enhanced)
-    history = game_state.get('chat_history', [])
-    inventory = game_state.get('player_inventory', [])
-    location = game_state.get('current_location', 'Unknown')
+    game_state = session.get('game_state')
+    game_running = (game_state is not None)
+    scene_html = "<p>Start a new game below.</p>"
+    processed_history = []
+    inventory = []
+    location = "Not started"
+    active_model_id = current_model_id
 
-    return render_template('index.html', scene=scene, history=history, inventory=inventory, location=location)
+    if game_running:
+        scene_text = game_state.get('last_scene', "Error: Scene not found.")
+        scene_html = markdown.markdown(scene_text, extensions=[])
+        chat_history = game_state.get('chat_history', [])
+        for entry in chat_history:
+            processed_entry = entry.copy()
+            if entry['role'] == 'model':
+                processed_entry['content'] = markdown.markdown(
+                    entry['content'], extensions=[])
+            processed_history.append(processed_entry)
+        inventory = game_state.get('player_inventory', [])
+        location = game_state.get('current_location', 'Unknown')
+        active_model_id = game_state.get('model_name', current_model_id)
 
+    return render_template('index.html',
+                           scene=scene_html,
+                           history=processed_history,
+                           inventory=inventory,
+                           location=location,
+                           available_models=AVAILABLE_MODELS,  # Pass the updated list
+                           current_model_id=active_model_id,
+                           game_running=game_running,
+                           DEFAULT_INITIAL_PROMPT=DEFAULT_INITIAL_PROMPT
+                           )
+
+
+# --- Other Routes ---
+# (handle_action, save_current_game, start_new_game_post, restart_game)
+# No changes needed in these routes as they read AVAILABLE_MODELS dynamically
 
 @app.route('/action', methods=['POST'])
 def handle_action():
-    """Processes player actions submitted via the form."""
+    # ... (no changes needed) ...
     player_action = request.form.get('action_input', '').strip()
-
     if not player_action:
         flash("Please enter an action.", 'warning')
         return redirect(url_for('index'))
-
-    if 'game_state' not in session:
-        flash("Game state lost. Please start a new game.", 'error')
-        return redirect(url_for('new_game'))  # Redirect to new game
-
+    if 'game_state' not in session or 'model_name' not in session:
+        flash("No active game found. Please start a new game first.", 'error')
+        return redirect(url_for('index'))
     current_game_state = session['game_state']
-
-    # Process the action using the imported logic
+    current_model_id = session['model_name']
+    if current_model_id not in AVAILABLE_MODELS.values():
+        flash(
+            f"Selected model '{current_model_id}' is not available. Please choose a model and start a new game.", 'error')
+        session.pop('game_state', None)
+        return redirect(url_for('index'))
     updated_game_state, parse_feedback = process_player_action(
-        player_action, current_game_state)
-
-    # Store the updated state back in the session
+        player_action, current_game_state, current_model_id
+    )
     session['game_state'] = updated_game_state
-
-    # Flash any parsing feedback (e.g., inventory changes)
     for msg in parse_feedback:
         flash(msg, 'info')
-
-    # Ensure the session is saved
     session.modified = True
-
-    # Redirect back to the main page to show results
     return redirect(url_for('index'))
 
 
-@app.route('/save', methods=['POST'])  # Use POST for actions that change state
+@app.route('/save', methods=['POST'])
 def save_current_game():
-    """Saves the current game state to the file."""
+    # ... (no changes needed) ...
     if 'game_state' in session:
+        if 'model_name' not in session['game_state']:
+            session['game_state']['model_name'] = session.get(
+                'model_name', DEFAULT_MODEL_ID)
         success, message = save_game(SAVE_FILENAME, session['game_state'])
         if success:
             flash(message, 'success')
@@ -90,25 +177,44 @@ def save_current_game():
             flash(message, 'error')
     else:
         flash("No game running to save.", 'warning')
-
     return redirect(url_for('index'))
 
 
-# Use POST to initiate the new game action
-@app.route('/new_game', methods=['POST'])
-def start_new_game_route():
-    """Clears the session and starts a completely new game."""
-    # Optionally get a starting prompt from the user if desired,
-    # but for now just uses the default in start_new_game()
-    session.pop('game_state', None)  # Clear existing game state
-    session['game_state'] = start_new_game()  # Start fresh
-    flash("Started a new adventure!", 'success')
+@app.route('/start_new', methods=['POST'])
+def start_new_game_post():
+    # ... (no changes needed) ...
+    selected_model_id = request.form.get('model_select')
+    initial_prompt = request.form.get('initial_scene_prompt', '').strip()
+    if not initial_prompt:
+        initial_prompt = DEFAULT_INITIAL_PROMPT
+        flash(
+            f"No initial prompt provided, using default: '{DEFAULT_INITIAL_PROMPT}'", "info")
+    # Check against the *new* AVAILABLE_MODELS
+    if not selected_model_id or selected_model_id not in AVAILABLE_MODELS.values():
+        flash("Invalid model selected. Using default.", "warning")
+        selected_model_id = DEFAULT_MODEL_ID
+    session.pop('game_state', None)
+    session['model_name'] = selected_model_id
+    session['game_state'] = start_new_game(selected_model_id, initial_prompt)
+    flash(
+        f"Started a new adventure with model: {selected_model_id}!", 'success')
+    session.modified = True
+    return redirect(url_for('index'))
+
+
+@app.route('/restart', methods=['POST'])
+def restart_game():
+    # ... (no changes needed) ...
+    session.pop('game_state', None)
+    flash("Restarting game...", 'info')
     session.modified = True
     return redirect(url_for('index'))
 
 
 # --- Run the App ---
 if __name__ == '__main__':
-    # Use 0.0.0.0 to make it accessible on your network (use with caution)
-    # Debug=True automatically reloads when code changes, but disable for production
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Ensure there's a default model before trying to run
+    if not DEFAULT_MODEL_ID:
+        print("FATAL ERROR: Cannot run application without a valid DEFAULT_MODEL_ID.")
+    else:
+        app.run(debug=True, host='0.0.0.0', port=5000)
