@@ -65,6 +65,45 @@
             font-style: italic;
             color: #777;
         }
+
+        .chat-history {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .chat-history h3 {
+            margin-top: 0;
+            color: #333;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .chat-history ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .chat-history li {
+            padding: 5px 0;
+            border-bottom: 1px dotted #eee;
+        }
+
+        .chat-history li:last-child {
+            border-bottom: none;
+        }
+
+        .chat-history .user {
+            font-weight: bold;
+            color: #007bff;
+        }
+
+        .chat-history .bot {
+            color: #28a745;
+        }
     </style>
 </head>
 
@@ -125,6 +164,7 @@
             </div>
             <p><small>Image generated using Vertex AI Imagen. Generation may take a moment and incurs costs.</small></p>
         </div>
+
         <hr>
 
         <div class="file-ops">
@@ -146,6 +186,17 @@
                 <button type="submit">Quit Current Game</button>
             </form>
         </div>
+
+        {% if game_state.chat_history %}
+        <div class="chat-history">
+            <h3>Chat History</h3>
+            <ul>
+                {% for entry in game_state.chat_history %}
+                <li class="{{ entry.role }}">{{ entry.role|capitalize }}: {{ entry.content }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
 
         {% else %}
         <h2>Start Your Adventure</h2>

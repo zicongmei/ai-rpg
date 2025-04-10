@@ -27,6 +27,8 @@ MODEL_NAME = 'gemini-2.0-flash'
 SAVE_DIR = os.path.expanduser("~/rpg_saves")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+HISTORY_LIMIT = 100
+
 RPG_RESPONSE = "rpg_response"
 RPG_RESPONSE_LOCATION = "location"
 RPG_RESPONSE_INVENTORY = "inventory"
@@ -300,7 +302,7 @@ def process_player_action(player_action, game_state):
     chat_history = game_state["chat_history"]
     chat_history.append({"role": "user", "content": player_action})
     history_context = ""
-    limit = 10
+    limit = HISTORY_LIMIT
     for entry in chat_history[-(limit+1):-1]:
         history_context += f"\n{entry['role'].capitalize()}: {entry['content']}"
     prompt = f"""
