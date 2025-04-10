@@ -20,6 +20,10 @@ except ImportError:
 
 
 # --- Constants ---
+MODEL_NAME = 'gemini-1.5-flash'
+MODEL_NAME = 'gemini-2.5-pro-preview-03-25'
+MODEL_NAME = 'gemini-2.0-flash'
+
 SAVE_DIR = os.path.expanduser("~/rpg_saves")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
@@ -37,6 +41,7 @@ RPG_INSTRUCTION = f"""Reminders:
       - Your task is to write an updated version rpg reponse in json format like "'{sample_json_string}'".
       - Update the * existing * sections/properties(no new sections, just update existing properties/lists, and only if needed).
       - The response must be a json format.
+      - The response should be in the same language as input.
     """
 
 # --- Authentication and Configuration ---
@@ -76,7 +81,7 @@ except Exception as e:
 # --- Model Selection ---
 try:
     # Gemini for text generation
-    text_model = genai.GenerativeModel('gemini-1.5-flash')
+    text_model = genai.GenerativeModel(MODEL_NAME)
 
     # --- NEW: Imagen Model Instance ---
     # NOTE: Model names change. 'imagegeneration@006' is a common stable identifier for Imagen 2/3.
@@ -206,66 +211,6 @@ def generate_image_with_imagen(scene_description):
         return None, error_message
 
 
-# --- Game State Parsing (Keep as is) ---
-def update_game_state_from_response(response_text, current_location, player_inventory):
-    # ... (no changes needed here) ...
-    new_location = current_location
-    new_inventory = list(player_inventory)  # Create a copy to modify
-    feedback_messages = []
-    response_lower = response_text.lower()
-    # Detect taking items
-    take_keywords = ["you pick up", "you take the",
-                     "add ", "acquire the", "find a", "receive a"]
-    for keyword in take_keywords:
-        if keyword in response_lower:
-            try:
-                parts = response_lower.split(keyword, 1)[1].split('.')[
-                    0].split(',')[0].strip()
-                potential_item = parts.replace("your ", "").replace(
-                    "the ", "").replace("a ", "").replace("an ", "").strip()
-                if potential_item and len(potential_item) > 2 and potential_item not in ["it", "nothing", "something"]:
-                    if potential_item not in new_inventory:
-                        new_inventory.append(potential_item)
-                        feedback_messages.append(
-                            f"Inventory updated: Added '{potential_item}'")
-            except IndexError:
-                pass
-    # Detect location changes
-    move_keywords = ["you travel to", "you enter the", "you arrive at",
-                     "you are now in", "step into the", "reach the", "move to"]
-    for keyword in move_keywords:
-        if keyword in response_lower:
-            try:
-                potential_location = response_lower.split(keyword, 1)[1].split('.')[
-                    0].split(',')[0].strip()
-                potential_location = potential_location.replace(
-                    "the ", "").replace("a ", "").replace("an ", "").strip()
-                if potential_location and len(potential_location) > 3:
-                    new_location = potential_location
-                    feedback_messages.append(
-                        f"Location updated: Now at '{new_location}'")
-                    break
-            except IndexError:
-                pass
-    # Detect dropping/using items
-    remove_keywords = ["you drop the", "you use the",
-                       "item disappears", "breaks the", "no longer have the", "give the"]
-    items_to_remove = []
-    for keyword in remove_keywords:
-        if keyword in response_lower:
-            relevant_part = response_lower.split(keyword, 1)[1][:60]
-            for item in new_inventory:
-                if item in relevant_part:
-                    if item not in items_to_remove:
-                        items_to_remove.append(item)
-    if items_to_remove:
-        for item in items_to_remove:
-            if item in new_inventory:
-                new_inventory.remove(item)
-                feedback_messages.append(
-                    f"Inventory updated: Removed '{item}'")
-    return new_location, new_inventory, feedback_messages
-
 # --- Save/Load Functions (Keep as is) ---
 
 
@@ -337,9 +282,9 @@ def start_new_game(initial_player_prompt):
         player_inventory = scene_json[RPG_RESPONSE_INVENTORY].split(",")
         game_state = {"current_location": current_location, "player_inventory": player_inventory,
                       "last_scene":  scene_json[RPG_RESPONSE], "chat_history": chat_history}
-        parsed_loc, _, _ = update_game_state_from_response(
-            scene_json[RPG_RESPONSE], current_location, player_inventory)
-        game_state["current_location"] = parsed_loc
+        # parsed_loc, _, _ = update_game_state_from_response(
+        #     scene_json[RPG_RESPONSE], current_location, player_inventory)
+        game_state["current_location"] = current_location
         return game_state, "New adventure started!"
     else:
         error_msg = scene_description if scene_description else "Failed to get the initial scene description from Gemini."
@@ -374,14 +319,15 @@ def process_player_action(player_action, game_state):
             {"role": "model", "content": scene_json[RPG_RESPONSE]})
         current_location = scene_json[RPG_RESPONSE_LOCATION]
         player_inventory = scene_json[RPG_RESPONSE_INVENTORY].split(",")
-        new_location, new_inventory, parse_feedback = update_game_state_from_response(
-            response_text, current_location, player_inventory
-        )
-        feedback_messages.extend(parse_feedback)
-        game_state["current_location"] = new_location
-        game_state["player_inventory"] = new_inventory
+        # new_location, new_inventory, parse_feedback = update_game_state_from_response(
+        #     response_text, current_location, player_inventory
+        # )
+        # feedback_messages.extend(parse_feedback)
+        game_state["current_location"] = current_location
+        game_state["player_inventory"] = player_inventory
         game_state["last_scene"] = scene_json[RPG_RESPONSE]
         game_state["chat_history"] = chat_history
+        print("game_state: ", game_state)
         return game_state, scene_json[RPG_RESPONSE], feedback_messages
     else:
         chat_history.pop()  # Remove failed user action
