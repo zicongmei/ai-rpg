@@ -1,0 +1,1 @@
+Some RPG games use Gemini to generate their content.
