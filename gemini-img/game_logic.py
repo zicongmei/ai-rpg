@@ -7,9 +7,8 @@ import json
 import sys
 from PIL import Image
 import io
-import base64  # Needed for image data
+import base64
 
-# --- NEW: Import Vertex AI ---
 try:
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel, ImageGenerationResponse
@@ -18,16 +17,21 @@ except ImportError:
     print("Please install it: pip install google-cloud-aiplatform --upgrade")
     sys.exit(1)
 
-
 # --- Constants ---
-MODEL_NAME = 'gemini-1.5-flash'
-MODEL_NAME = 'gemini-2.5-pro-preview-03-25'
-MODEL_NAME = 'gemini-2.0-flash'
+# Default model - can be overridden by user selection
+DEFAULT_MODEL_NAME = 'gemini-2.0-flash-lite'  # Use a valid default
+
+# Define the allowed models explicitly for validation (matches app.py)
+ALLOWED_MODELS = [
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-2.5-pro-preview-03-25'
+]
 
 SAVE_DIR = os.path.expanduser("~/rpg_saves")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-HISTORY_LIMIT = 100
+HISTORY_LIMIT = 10  # Reduced for testing token limits
 
 RPG_RESPONSE = "rpg_response"
 RPG_RESPONSE_LOCATION = "location"
@@ -48,25 +52,19 @@ RPG_INSTRUCTION = f"""Reminders:
 
 # --- Authentication and Configuration ---
 try:
-    # project_id is often retrieved here
     credentials, project_id = google.auth.default()
     if not project_id:
-        # Attempt to get project ID from environment variable if not found by default()
         project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
         if not project_id:
             raise ValueError(
                 "Could not determine Google Cloud project ID. Set the GOOGLE_CLOUD_PROJECT environment variable or ensure gcloud is configured correctly.")
 
-    # --- NEW: Vertex AI Configuration ---
     VERTEX_AI_PROJECT = project_id
-    # Choose a region where Imagen is available, e.g., us-central1
     VERTEX_AI_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 
-    # Configure Gemini (as before)
-    # Assuming token-based auth for Gemini here
-    genai.configure(api_key=credentials.token)
+    # Configure Gemini - API Key might be needed if Application Default Credentials don't work for Generative Language API
+    # genai.configure(api_key=os.environ.get("GEMINI_API_KEY")) # Alternative if needed
 
-    # --- NEW: Initialize Vertex AI ---
     vertexai.init(project=VERTEX_AI_PROJECT,
                   location=VERTEX_AI_LOCATION, credentials=credentials)
 
@@ -82,151 +80,146 @@ except Exception as e:
 
 # --- Model Selection ---
 try:
-    # Gemini for text generation
-    text_model = genai.GenerativeModel(MODEL_NAME)
-
-    # --- NEW: Imagen Model Instance ---
-    # NOTE: Model names change. 'imagegeneration@006' is a common stable identifier for Imagen 2/3.
-    # The specific 'imagen-3.0-generate-002' might require checking Vertex AI docs for the exact SDK identifier.
-    # Using 'imagegeneration@006' as a robust fallback. Change if you confirm the exact identifier.
-    # Or try the specific one if confirmed available via SDK
-    imagen_model_name = "imagegeneration@006"
-    imagen_model_name = 'imagen-3.0-generate-002'
+    # Imagen Model Instance (as before)
+    imagen_model_name = "imagegeneration@006"  # Using stable identifier
     print(f"Using Imagen model: {imagen_model_name}")
     imagen_model = ImageGenerationModel.from_pretrained(imagen_model_name)
+
+    # We will initialize Gemini models on demand in get_gemini_response
 
 except Exception as e:
     print(f"ERROR: Failed to initialize AI models: {e}", file=sys.stderr)
     sys.exit(1)
 
-# --- Gemini Interaction (Keep as is) ---
+# --- Gemini Interaction ---
 
 
-def get_gemini_response(prompt, model_to_use):
-    """Sends a prompt to the specified Gemini model and returns the text response."""
-    print("\n🤖 *Gemini is thinking (Text)...*\n")
+def get_gemini_response(prompt, model_name):
+    """
+    Sends a prompt to the specified Gemini model and returns the text response
+    along with input and output token counts.
+    """
+    # Validate model name against allowed list
+    if model_name not in ALLOWED_MODELS:
+        print(
+            f"WARN: Invalid model '{model_name}' requested. Using default '{DEFAULT_MODEL_NAME}'.")
+        model_name = DEFAULT_MODEL_NAME
+
+    print(f"\n🤖 *Gemini is thinking ({model_name})...*\n")
+    input_tokens = 0
+    output_tokens = 0
     try:
+        # Initialize the specific model instance
+        model_to_use = genai.GenerativeModel(model_name)
         response = model_to_use.generate_content(prompt)
+
+        # --- Retrieve Token Counts ---
+        if hasattr(response, 'usage_metadata'):
+            input_tokens = response.usage_metadata.prompt_token_count
+            output_tokens = response.usage_metadata.candidates_token_count
+            print(
+                f"   Tokens - Input: {input_tokens}, Output: {output_tokens}")
+        else:
+            print("   WARN: Token usage metadata not found in response.")
+            # Optionally, you could estimate tokens here using model.count_tokens(prompt)
+            # but this only gives input tokens before the call.
+
+        # --- Process Response Text ---
         if response.parts:
-            print("response.parts", response)
             text = response.text
             text = text.strip()
-            text = text.strip('`')
-            text = text.removeprefix('json')
+            # Improved JSON cleaning
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.endswith("```"):
+                text = text[:-3]
             text = text.strip()
-            print(">> text: '", text, "'")
-            return text
+            # Log raw response before potential JSON errors
+            print(f">> Raw Gemini text: '{text}'")
+            return text, input_tokens, output_tokens
         else:
+            feedback = getattr(response, 'prompt_feedback', 'Unknown reason.')
             print(
-                f"WARN: Gemini response was empty or blocked. Feedback: {response.prompt_feedback}")
-            return "The way forward seems blocked by an unseen force."
+                f"WARN: Gemini response was empty or blocked. Feedback: {feedback}")
+            # Return counts even on block/empty
+            return "The way forward seems blocked by an unseen force.", input_tokens, output_tokens
+
     except Exception as e:
-        print(f"Error communicating with Gemini: {e}", file=sys.stderr)
-        return f"An error occurred with text generation: {e}"
+        print(
+            f"Error communicating with Gemini ({model_name}): {e}", file=sys.stderr)
+        # Return 0 tokens on error, but could also return None or raise
+        return f"An error occurred with text generation ({model_name}): {e}", 0, 0
 
 
 # --- NEW: Image Generation with Imagen ---
+# (Keep generate_image_with_imagen as is, but note it also calls get_gemini_response
+#  for the image prompt. Ensure it uses a reasonable default model or pass one in if needed)
 def generate_image_with_imagen(scene_description):
     """Generates an image based on the scene using Vertex AI Imagen."""
-    print("\n🖼️ *Generating image with Imagen...*\n")
+    print("\n🎨 *Generating image with Imagen...*\n")
 
-    # 1. Create a good prompt for Imagen based on the scene
-    # (Could reuse the prompt generation logic, or simplify)
     image_prompt_request = f"""
-    Create a concise, descriptive, and visually evocative prompt suitable for an AI image generator based on this RPG scene. Focus on key elements, mood, and style (fantasy art).
+    Create a concise, descriptive, and visually evocative prompt suitable for an AI image generator based on this RPG scene. Focus on key elements, mood, and style (fantasy art). Max 50 words.
 
     Scene: "{scene_description}"
 
     Image Prompt:
     """
-    image_prompt = get_gemini_response(image_prompt_request, text_model)
+    # Using default model for image prompt generation for simplicity here
+    # If needed, this could accept a model_name too
+    image_prompt_text, _, _ = get_gemini_response(
+        image_prompt_request, DEFAULT_MODEL_NAME)
 
-    if not image_prompt or "error occurred" in image_prompt.lower():
-        print(
-            f"WARN: Could not generate a suitable image prompt from the scene description.")
-        # Fallback prompt if Gemini fails
-        # Use truncated scene as fallback
+    if not image_prompt_text or "error occurred" in image_prompt_text.lower():
+        print(f"WARN: Could not generate a suitable image prompt. Using fallback.")
         image_prompt = f"Fantasy RPG scene: {scene_description[:200]}"
+    else:
+        image_prompt = image_prompt_text.split("Image Prompt:")[-1].strip()
 
-    # Refine prompt - remove potential conversational prefixes from Gemini's output
-    image_prompt = image_prompt.split("Image Prompt:")[-1].strip()
     print(f"Using Image Prompt: {image_prompt}")
 
-    # 2. Call Imagen Model
     try:
-        # Refer to SDK docs for all options: aspect_ratio, style_preset, negative_prompt, etc.
         images: ImageGenerationResponse = imagen_model.generate_images(
             prompt=image_prompt,
-            number_of_images=1,  # Generate one image
-            # aspect_ratio="16:9", # Or "1:1", "9:16" etc.
-            # seed=12345 # Optional: for reproducibility
-            # negative_prompt="text, words, letters, blurry, low quality" # Optional
+            number_of_images=1,
         )
 
-        # if images.images:
-        #     # Option 1: Save the image to a file
-        #     image_bytes = images.images[0]._image_bytes # Access raw bytes
-        #     with open("generated_image.png", "wb") as f:
-        #         f.write(image_bytes)
-        #     print("Image saved to generated_image.png")
-
-        #     # Option 2: Get a GCS URI if generated directly to Cloud Storage
-        #     # gcs_uri = response.images[0]._gcs_uri
-        #     # print(f"Image generated at: {gcs_uri}") # Usually requires specifying output GCS bucket in call
-
-        # else:
-        #     print("Image generation failed or returned no images.")
-        #     # Check response object for error details if available
-
         if images.images:
-            # 3. Process the result - Get Base64 data
-            # Get the first (and only) image object
             image_obj = images.images[0]
-            # Access image bytes directly if available
             if hasattr(image_obj, '_image_bytes'):
                 image_bytes = image_obj._image_bytes
                 b64_image_data = base64.b64encode(image_bytes).decode('utf-8')
                 print("Successfully generated image and encoded to base64.")
-                return b64_image_data, None  # Return data, no error
+                return b64_image_data, None
             else:
-                print(
-                    "ERROR: Could not access image bytes (_image_bytes attribute missing). Check SDK version/response structure.")
+                print("ERROR: Could not access image bytes.")
                 return None, "Failed to process generated image data."
-
         else:
-            # Handle cases where generation might be blocked by safety filters
-            # The response object might have safety attributes to check
-            print("WARN: Imagen generation resulted in no images. Check safety filters or prompt.",
-                  images._prediction_response)
-            # You might want inspect `images._prediction_response` if available for details
-            return None, "Image generation failed or was blocked (possibly safety filters)."
+            print("WARN: Imagen generation resulted in no images.",
+                  getattr(images, '_prediction_response', ''))
+            return None, "Image generation failed or was blocked."
 
     except Exception as e:
         print(f"Error calling Imagen API: {e}", file=sys.stderr)
-        # Check for common errors like permissions, quota, invalid arguments
         error_message = f"Error generating image: {e}"
-        if "permission denied" in str(e).lower():
-            error_message += " (Check Vertex AI permissions for your service account/credentials)"
-        elif "quota" in str(e).lower():
-            error_message += " (Check Vertex AI Quota for Imagen)"
-
+        # Add more specific error hints if possible
         return None, error_message
 
 
-# --- Save/Load Functions (Keep as is) ---
-
-
+# --- Save/Load Functions ---
 def save_game(filename, game_state):
-    # ... (no changes needed here) ...
     if ".." in filename or "/" in filename or "\\" in filename:
-        print(f"Invalid filename characters detected: {filename}")
-        return False, f"Invalid filename: '{filename}'. Use alphanumeric characters, underscores, or hyphens."
+        return False, f"Invalid filename: '{filename}'."
     filepath = os.path.join(SAVE_DIR, filename + ".json")
     try:
+        # Ensure all expected keys, including tokens, are present before saving
+        game_state.setdefault('total_input_tokens', 0)
+        game_state.setdefault('total_output_tokens', 0)
+
         with open(filepath, 'w') as f:
             json.dump(game_state, f, indent=4)
         print(f"Game saved successfully to {filepath}!")
-        return True, f"Game saved successfully as '{filename}.json' in your saves directory."
+        return True, f"Game saved successfully as '{filename}.json'."
     except IOError as e:
         print(f"Error saving game to {filepath}: {e}", file=sys.stderr)
         return False, f"Error saving game: {e}"
@@ -237,22 +230,32 @@ def save_game(filename, game_state):
 
 
 def load_game(filename):
-    # ... (no changes needed here) ...
     if ".." in filename or "/" in filename or "\\" in filename:
-        print(f"Invalid filename characters detected: {filename}")
-        return None, f"Invalid filename: '{filename}'. Use alphanumeric characters, underscores, or hyphens."
+        return None, f"Invalid filename: '{filename}'."
     filepath = os.path.join(SAVE_DIR, filename + ".json")
     if not os.path.exists(filepath):
-        return None, f"Save file '{filename}.json' not found in saves directory."
+        return None, f"Save file '{filename}.json' not found."
     try:
         with open(filepath, 'r') as f:
             game_state = json.load(f)
-        if all(k in game_state for k in ["current_location", "player_inventory", "last_scene", "chat_history"]):
+
+        # Check for essential keys
+        required_keys = ["current_location",
+                         "player_inventory", "last_scene", "chat_history"]
+        if all(k in game_state for k in required_keys):
+            # Add token counts if missing from old save files, default to 0
+            game_state.setdefault('total_input_tokens', 0)
+            game_state.setdefault('total_output_tokens', 0)
+            # Reset last token counts upon loading
+            game_state['last_input_tokens'] = 0
+            game_state['last_output_tokens'] = 0
+
             print(f"Game loaded successfully from {filepath}!")
             return game_state, f"Game loaded successfully from '{filename}.json'!"
         else:
-            print(f"Save file {filepath} seems corrupted.", file=sys.stderr)
-            return None, f"Save file '{filename}.json' appears corrupted. Cannot load."
+            print(
+                f"Save file {filepath} seems corrupted (missing keys).", file=sys.stderr)
+            return None, f"Save file '{filename}.json' appears corrupted."
     except (IOError, json.JSONDecodeError) as e:
         print(f"Error loading game from {filepath}: {e}", file=sys.stderr)
         return None, f"Error loading game '{filename}.json': {e}"
@@ -261,79 +264,158 @@ def load_game(filename):
             f"An unexpected error occurred while loading: {e}", file=sys.stderr)
         return None, f"An unexpected error occurred while loading: {e}"
 
-# --- Initial Game Setup (Keep as is) ---
 
-
-def start_new_game(initial_player_prompt):
-    # ... (no changes needed here) ...
+# --- Initial Game Setup ---
+def start_new_game(initial_player_prompt, model_name):
+    # Added model_name parameter
     current_location = "an unknown starting point"
     player_inventory = []
-    chat_history = [{"role": "user", "content": initial_player_prompt}]
+    # Use correct structure
+    chat_history = [{"role": "user", "parts": [
+        {"text": initial_player_prompt}]}]
+
     full_initial_prompt = f"""
     Roleplay: You are the Dungeon Master for a text-based fantasy RPG.
-    Task: Start a new adventure based on the player's first action or thought.
+    Task: Start a new adventure based on the player's first action or thought. Respond ONLY with the JSON structure.
     Player's input: '{initial_player_prompt}'
     Player's location: '{current_location}'
     {RPG_INSTRUCTION}"""
-    scene_description = get_gemini_response(full_initial_prompt, text_model)
-    if scene_description and "error occurred" not in scene_description.lower():
-        scene_json = json.loads(scene_description)
-        chat_history.append(
-            {"role": "model", "content": scene_json[RPG_RESPONSE]})
-        current_location = scene_json[RPG_RESPONSE_LOCATION]
-        player_inventory = scene_json[RPG_RESPONSE_INVENTORY].split(",")
-        game_state = {"current_location": current_location, "player_inventory": player_inventory,
-                      "last_scene":  scene_json[RPG_RESPONSE], "chat_history": chat_history}
-        # parsed_loc, _, _ = update_game_state_from_response(
-        #     scene_json[RPG_RESPONSE], current_location, player_inventory)
-        game_state["current_location"] = current_location
-        return game_state, "New adventure started!"
+
+    # Pass model_name, get response text and token counts
+    response_text, input_tokens, output_tokens = get_gemini_response(
+        full_initial_prompt, model_name)
+
+    if response_text and "error occurred" not in response_text.lower():
+        try:
+            scene_json = json.loads(response_text)
+            # Validate expected keys in the JSON response
+            if not all(k in scene_json for k in [RPG_RESPONSE, RPG_RESPONSE_LOCATION, RPG_RESPONSE_INVENTORY]):
+                raise ValueError("JSON response missing required keys.")
+
+            chat_history.append({"role": "model", "parts": [
+                                {"text": scene_json[RPG_RESPONSE]}]})  # Use correct structure
+            current_location = scene_json[RPG_RESPONSE_LOCATION]
+            # Handle potentially empty inventory string
+            inventory_str = scene_json.get(RPG_RESPONSE_INVENTORY, "")
+            player_inventory = [item.strip()
+                                for item in inventory_str.split(',') if item.strip()]
+
+            game_state = {
+                "current_location": current_location,
+                "player_inventory": player_inventory,
+                "last_scene": scene_json[RPG_RESPONSE],
+                "chat_history": chat_history,
+                "last_input_tokens": input_tokens,  # Store last counts
+                "last_output_tokens": output_tokens,
+                "total_input_tokens": input_tokens,  # Initialize total counts
+                "total_output_tokens": output_tokens
+            }
+            return game_state, "New adventure started!", input_tokens, output_tokens
+        except (json.JSONDecodeError, ValueError) as e:
+            print(
+                f"Error parsing initial JSON response: {e}\nRaw response: {response_text}", file=sys.stderr)
+            error_msg = f"Failed to understand the initial scene description from AI: {e}"
+            # Return token counts even on parse error
+            return None, error_msg, input_tokens, output_tokens
     else:
-        error_msg = scene_description if scene_description else "Failed to get the initial scene description from Gemini."
-        return None, error_msg
+        error_msg = response_text if response_text else "Failed to get the initial scene description from AI."
+        # Return token counts even on AI error
+        return None, error_msg, input_tokens, output_tokens
 
 
-# --- Process Player Turn (Keep as is) ---
-def process_player_action(player_action, game_state):
-    # ... (no changes needed here) ...
+# --- Process Player Turn ---
+def process_player_action(player_action, game_state, model_name):
+    # Added model_name parameter
     current_location = game_state["current_location"]
     player_inventory = game_state["player_inventory"]
-    last_scene = game_state["last_scene"]
     chat_history = game_state["chat_history"]
-    chat_history.append({"role": "user", "content": player_action})
+
+    # Add user action to history (ensure correct format)
+    chat_history.append({"role": "user", "parts": [{"text": player_action}]})
+
+    # Limit history context sent to the model
+    limited_history = chat_history[-HISTORY_LIMIT:]
+
+    # Construct context string (adapt if using different history structure)
     history_context = ""
-    limit = HISTORY_LIMIT
-    for entry in chat_history[-(limit+1):-1]:
-        history_context += f"\n{entry['role'].capitalize()}: {entry['content']}"
+    for entry in limited_history[:-1]:  # Exclude the latest user action
+        role = entry.get('role', 'unknown')
+        # Assuming 'parts' contains a list with one text part
+        content = entry.get('parts', [{}])[0].get('text', '')
+        history_context += f"\n{role.capitalize()}: {content}"
+
     prompt = f"""
     Roleplay: You are the Dungeon Master for a text-based fantasy RPG.
-    Task: Narrate the outcome of the player's action based on the current situation and history.
+    Task: Narrate the outcome of the player's action based on the current situation and history. Respond ONLY with the JSON structure.
     Current Location: {current_location}
     Player Inventory: {', '.join(player_inventory) or 'nothing'}
-    Recent History: {history_context.strip()}
+    Recent History (last {len(limited_history)-1} turns): {history_context.strip()}
     Player's Action: "{player_action}"
     {RPG_INSTRUCTION}"""
-    response_text = get_gemini_response(prompt, text_model)
+
+    # Pass model_name, get response text and token counts
+    response_text, input_tokens, output_tokens = get_gemini_response(
+        prompt, model_name)
+
     feedback_messages = []
     if response_text and "error occurred" not in response_text.lower():
-        scene_json = json.loads(response_text)
-        chat_history.append(
-            {"role": "model", "content": scene_json[RPG_RESPONSE]})
-        current_location = scene_json[RPG_RESPONSE_LOCATION]
-        player_inventory = scene_json[RPG_RESPONSE_INVENTORY].split(",")
-        # new_location, new_inventory, parse_feedback = update_game_state_from_response(
-        #     response_text, current_location, player_inventory
-        # )
-        # feedback_messages.extend(parse_feedback)
-        game_state["current_location"] = current_location
-        game_state["player_inventory"] = player_inventory
-        game_state["last_scene"] = scene_json[RPG_RESPONSE]
-        game_state["chat_history"] = chat_history
-        print("game_state: ", game_state)
-        return game_state, scene_json[RPG_RESPONSE], feedback_messages
+        try:
+            scene_json = json.loads(response_text)
+            # Validate expected keys in the JSON response
+            if not all(k in scene_json for k in [RPG_RESPONSE, RPG_RESPONSE_LOCATION, RPG_RESPONSE_INVENTORY]):
+                raise ValueError("JSON response missing required keys.")
+
+            # Add AI response to history
+            chat_history.append(
+                {"role": "model", "parts": [{"text": scene_json[RPG_RESPONSE]}]})
+
+            # Update game state from JSON
+            game_state["current_location"] = scene_json[RPG_RESPONSE_LOCATION]
+            inventory_str = scene_json.get(RPG_RESPONSE_INVENTORY, "")
+            game_state["player_inventory"] = [item.strip()
+                                              for item in inventory_str.split(',') if item.strip()]
+            game_state["last_scene"] = scene_json[RPG_RESPONSE]
+            # Update history in state
+            game_state["chat_history"] = chat_history
+            game_state["last_input_tokens"] = input_tokens  # Store last counts
+            game_state["last_output_tokens"] = output_tokens
+
+            # Accumulate total tokens (ensure totals exist from start/load)
+            game_state['total_input_tokens'] = game_state.get(
+                'total_input_tokens', 0) + input_tokens
+            game_state['total_output_tokens'] = game_state.get(
+                'total_output_tokens', 0) + output_tokens
+
+            print(
+                f"Updated game_state (tokens: last={input_tokens}/{output_tokens}, total={game_state['total_input_tokens']}/{game_state['total_output_tokens']})")
+            # Return only necessary info for app.py
+            return game_state, scene_json[RPG_RESPONSE], feedback_messages, input_tokens, output_tokens
+
+        except (json.JSONDecodeError, ValueError) as e:
+            print(
+                f"Error parsing action JSON response: {e}\nRaw response: {response_text}", file=sys.stderr)
+            error_message = f"The AI's response was unclear: {e}"
+            feedback_messages.append(error_message)
+            chat_history.pop()  # Remove user action that led to error
+            game_state["chat_history"] = chat_history
+            # Return counts even on parse error, update totals with 0 for this turn
+            game_state["last_input_tokens"] = input_tokens
+            game_state["last_output_tokens"] = output_tokens
+            game_state['total_input_tokens'] = game_state.get(
+                'total_input_tokens', 0) + input_tokens
+            game_state['total_output_tokens'] = game_state.get(
+                'total_output_tokens', 0) + output_tokens
+            return game_state, game_state["last_scene"], feedback_messages, input_tokens, output_tokens
     else:
-        chat_history.pop()  # Remove failed user action
-        game_state["chat_history"] = chat_history
-        error_message = response_text if response_text else "The AI seems unresponsive. Please try your action again."
+        error_message = response_text if response_text else "The AI seems unresponsive. Please try again."
         feedback_messages.append(error_message)
-        return game_state, game_state["last_scene"], feedback_messages
+        chat_history.pop()  # Remove user action that led to error
+        game_state["chat_history"] = chat_history
+        # Return counts even on AI error, update totals
+        game_state["last_input_tokens"] = input_tokens
+        game_state["last_output_tokens"] = output_tokens
+        game_state['total_input_tokens'] = game_state.get(
+            'total_input_tokens', 0) + input_tokens
+        game_state['total_output_tokens'] = game_state.get(
+            'total_output_tokens', 0) + output_tokens
+        return game_state, game_state["last_scene"], feedback_messages, input_tokens, output_tokens

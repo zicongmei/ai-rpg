@@ -6,23 +6,165 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gemini RPG Adventure</title>
     <style>
-        /* ... (keep existing styles) ... */
-        .image-generation-section {
-            margin-top: 20px;
-            padding: 15px;
-            border: 1px dashed #ccc;
+        body {
+            font-family: sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #333;
+        }
+
+        .feedback {
+            padding: 10px;
+            margin-bottom: 15px;
             border-radius: 4px;
         }
 
-        .image-generation-section h3 {
-            margin-top: 0;
+        .feedback.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .feedback.danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .feedback.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .feedback.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .system-feedback {
+            font-style: italic;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .scene {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #ced4da;
+        }
+
+        .inventory ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 5px 0 15px 0;
+        }
+
+        .inventory li {
+            display: inline-block;
+            background: #ddd;
+            padding: 3px 8px;
+            border-radius: 10px;
+            margin-right: 5px;
+            font-size: 0.9em;
+        }
+
+        .location {
+            margin-bottom: 15px;
+            font-style: italic;
             color: #555;
+        }
+
+        .actions input[type="text"] {
+            padding: 10px;
+            width: calc(100% - 180px);
+            /* Adjust width */
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .actions select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            margin-right: 10px;
+        }
+
+        /* Style for select */
+        .actions button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .actions button:hover {
+            background-color: #0056b3;
+        }
+
+        .image-generation-section,
+        .file-ops,
+        .quit-form,
+        .token-info,
+        .model-selection {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .file-ops input[type="text"] {
+            padding: 8px;
+            margin-right: 5px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .file-ops button {
+            padding: 8px 12px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+
+        .file-ops button:hover {
+            background-color: #5a6268;
+        }
+
+        .quit-form button {
+            background-color: #dc3545;
+        }
+
+        .quit-form button:hover {
+            background-color: #c82333;
         }
 
         #image-display-container {
             margin-top: 15px;
             min-height: 100px;
-            /* Placeholder space */
             background-color: #eee;
             border-radius: 4px;
             display: flex;
@@ -30,55 +172,51 @@
             align-items: center;
             text-align: center;
             color: #666;
+            overflow: hidden;
         }
 
         #generated-image {
             max-width: 100%;
             max-height: 400px;
-            /* Limit image size */
             display: none;
-            /* Hide initially */
         }
 
         #image-placeholder-text {
             display: block;
-            /* Show initially */
         }
 
         #image-error-message {
             color: #dc3545;
             font-weight: bold;
             display: none;
-            /* Hide initially */
         }
 
         #loading-spinner {
             display: none;
             margin-left: 10px;
-            /* Simple text spinner */
             font-style: italic;
             color: #555;
         }
 
-        .location {
-            margin-top: 10px;
-            font-style: italic;
-            color: #777;
-        }
-
         .chat-history {
             margin-top: 20px;
-            padding: 10px;
+            padding: 15px;
             border: 1px solid #ddd;
             border-radius: 4px;
             background-color: #f9f9f9;
+            max-height: 300px;
+            overflow-y: auto;
         }
 
         .chat-history h3 {
             margin-top: 0;
             color: #333;
             font-size: 1.1em;
-            margin-bottom: 5px;
+            margin-bottom: 10px;
+            position: sticky;
+            top: 0;
+            background: #f9f9f9;
+            padding-bottom: 5px;
         }
 
         .chat-history ul {
@@ -88,7 +226,7 @@
         }
 
         .chat-history li {
-            padding: 5px 0;
+            padding: 8px 0;
             border-bottom: 1px dotted #eee;
         }
 
@@ -101,8 +239,35 @@
             color: #007bff;
         }
 
-        .chat-history .bot {
+        .chat-history .model {
             color: #28a745;
+        }
+
+        /* Changed from .bot */
+        .token-info {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            color: #444;
+        }
+
+        .token-info span {
+            margin-right: 15px;
+        }
+
+        .token-info strong {
+            color: #000;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        /* Grouping form elements */
+        label {
+            margin-right: 10px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -121,22 +286,23 @@
 
         {% if feedback %}
         {% for msg in feedback %}
-        <p class="system-feedback">{{ msg }}</p> {# Display all feedback from the list #}
+        <p class="system-feedback">{{ msg }}</p> {# Display feedback from game logic #}
         {% endfor %}
         {% endif %}
-
 
         {% if game_state %}
         <h2>Current Scene</h2>
         <div class="scene">
-            {{ game_state.last_scene }}
+            {{ game_state.last_scene | safe }} {# Use safe if scene can contain HTML-like structures potentially #}
         </div>
 
         <div class="inventory">
             <strong>Inventory:</strong>
-            {% if game_state.player_inventory %}
+            {% if game_state.player_inventory and game_state.player_inventory[0] != '' %}
             <ul>{% for item in game_state.player_inventory %}<li>{{ item }}</li>{% endfor %}</ul>
-            {% else %}<span>Empty</span>{% endif %}
+            {% else %}
+            <span>Empty</span>
+            {% endif %}
         </div>
 
         {% if game_state.current_location %}
@@ -145,8 +311,28 @@
         </div>
         {% endif %}
 
+        {# --- Token Info Display --- #}
+        <div class="token-info">
+            <h3>Token Usage</h3>
+            <span>Last Request:
+                <strong>Input:</strong> {{ game_state.get('last_input_tokens', 'N/A') }} |
+                <strong>Output:</strong> {{ game_state.get('last_output_tokens', 'N/A') }}
+            </span>
+            <span>Total Session:
+                <strong>Input:</strong> {{ game_state.get('total_input_tokens', 'N/A') }} |
+                <strong>Output:</strong> {{ game_state.get('total_output_tokens', 'N/A') }}
+            </span>
+        </div>
+
         <div class="actions">
-            <form method="POST" action="{{ url_for('index') }}">
+            <form method="POST" action="{{ url_for('index') }}" class="form-group">
+                {# --- Model Selection Dropdown --- #}
+                <label for="model-select-action">AI Model:</label>
+                <select name="selected_model" id="model-select-action">
+                    {% for model in available_models %}
+                    <option value="{{ model }}" {% if model==selected_model %}selected{% endif %}>{{ model }}</option>
+                    {% endfor %}
+                </select>
                 <input type="text" name="action" placeholder="What do you do next?" required autofocus>
                 <button type="submit">Send</button>
             </form>
@@ -157,25 +343,25 @@
             <button id="generate-image-btn">Generate Image</button>
             <span id="loading-spinner">Generating image...</span>
             <div id="image-display-container">
-                <span id="image-placeholder-text">Click the button to generate an image based on the current
-                    scene.</span>
+                <span id="image-placeholder-text">Click button to generate image.</span>
                 <img id="generated-image" alt="Generated Scene Image">
                 <span id="image-error-message"></span>
             </div>
-            <p><small>Image generated using Vertex AI Imagen. Generation may take a moment and incurs costs.</small></p>
+            <p><small>Image generation uses Vertex AI Imagen.</small></p>
         </div>
 
         <hr>
 
         <div class="file-ops">
             <h2>Save / Load Game</h2>
-            <p><small>Files are saved/loaded from your user's `rpg_saves` directory.</small></p>
-            <form method="POST" action="{{ url_for('save_game_route') }}">
-                <input type="text" name="filename" placeholder="Save filename (e.g., forest_save)" required>
+            <p><small>Files are saved/loaded from `~/rpg_saves` directory.</small></p>
+            <form method="POST" action="{{ url_for('save_game_route') }}"
+                style="display: inline-block; margin-right: 10px;">
+                <input type="text" name="filename" placeholder="Save filename" required>
                 <button type="submit">Save Game</button>
             </form>
-            <form method="POST" action="{{ url_for('load_game_route') }}">
-                <input type="text" name="filename" placeholder="Load filename (e.g., forest_save)" required>
+            <form method="POST" action="{{ url_for('load_game_route') }}" style="display: inline-block;">
+                <input type="text" name="filename" placeholder="Load filename" required>
                 <button type="submit">Load Game</button>
             </form>
         </div>
@@ -192,28 +378,44 @@
             <h3>Chat History</h3>
             <ul>
                 {% for entry in game_state.chat_history %}
-                <li class="{{ entry.role }}">{{ entry.role|capitalize }}: {{ entry.content }}</li>
+                {# Adjust based on actual chat_history structure from game_logic #}
+                <li class="{{ entry.get('role', 'unknown') }}">
+                    <strong>{{ entry.get('role', 'unknown')|capitalize }}:</strong>
+                    {{ entry.get('parts', [{}])[0].get('text', '') | safe }}
+                </li>
                 {% endfor %}
             </ul>
         </div>
         {% endif %}
 
         {% else %}
+        {# --- Start New Game Section --- #}
         <h2>Start Your Adventure</h2>
         <div class="actions">
             <form method="POST" action="{{ url_for('new_game') }}">
-                <input type="text" name="initial_prompt"
-                    placeholder="Describe your first action or thought (e.g., 'I wake up in a dark cave')" required
-                    autofocus size="50">
-                <button type="submit">Start New Game</button>
+                {# --- Model Selection Dropdown (New Game) --- #}
+                <div class="form-group">
+                    <label for="model-select-new">AI Model:</label>
+                    <select name="selected_model" id="model-select-new">
+                        {% for model in available_models %}
+                        <option value="{{ model }}" {% if model==selected_model %}selected{% endif %}>{{ model }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <input type="text" name="initial_prompt" placeholder="Describe your first action or thought..."
+                        required autofocus size="50">
+                    <button type="submit">Start New Game</button>
+                </div>
             </form>
         </div>
         <hr>
         <div class="file-ops">
             <h2>Load Existing Game</h2>
-            <p><small>Files are loaded from your user's `rpg_saves` directory.</small></p>
+            <p><small>Files are loaded from `~/rpg_saves` directory.</small></p>
             <form method="POST" action="{{ url_for('load_game_route') }}">
-                <input type="text" name="filename" placeholder="Load filename (e.g., forest_save)" required>
+                <input type="text" name="filename" placeholder="Load filename" required>
                 <button type="submit">Load Game</button>
             </form>
         </div>
@@ -221,6 +423,7 @@
     </div>
 
     <script>
+        // Existing JavaScript for image generation remains the same...
         const generateBtn = document.getElementById('generate-image-btn');
         const imageContainer = document.getElementById('image-display-container');
         const imgElement = document.getElementById('generated-image');
@@ -230,54 +433,39 @@
 
         if (generateBtn) {
             generateBtn.addEventListener('click', () => {
-                // Reset display elements
                 spinner.style.display = 'inline';
-                imgElement.style.display = 'none'; // Hide previous image
-                placeholderText.style.display = 'none'; // Hide placeholder
-                errorMessage.style.display = 'none'; // Hide previous error
+                imgElement.style.display = 'none';
+                placeholderText.style.display = 'none';
+                errorMessage.style.display = 'none';
                 generateBtn.disabled = true;
 
-                // Fetch from the updated route
-                fetch("{{ url_for('generate_image_route') }}", { // Updated route name
-                    method: 'GET',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
+                fetch("{{ url_for('generate_image_route') }}") // Uses the route function name
                     .then(response => {
-                        // Check if response is ok (status in the range 200-299)
                         if (!response.ok) {
-                            // If not ok, parse the JSON body for error message
                             return response.json().then(errData => {
-                                // Throw an error with the message from the server response
                                 throw new Error(errData.error || `HTTP error! Status: ${response.status}`);
                             }).catch(parseError => {
-                                // If parsing the error JSON fails, throw a generic HTTP error
                                 console.error("Failed to parse error response:", parseError);
                                 throw new Error(`HTTP error! Status: ${response.status}`);
                             });
                         }
-                        // If response is ok, parse the JSON body for image data
                         return response.json();
                     })
                     .then(data => {
                         if (data.image_data) {
-                            // Set the image source to the base64 data URL
                             imgElement.src = `data:image/png;base64,${data.image_data}`;
-                            imgElement.style.display = 'block'; // Show image
+                            imgElement.style.display = 'block';
                         } else if (data.error) {
-                            // This case might be redundant if handled by the !response.ok check, but good as a fallback
                             throw new Error(data.error);
                         } else {
-                            // Unexpected case: successful response but no image data or error
                             throw new Error("Received unexpected response from server.");
                         }
                     })
                     .catch(error => {
                         console.error('Error generating/fetching image:', error);
                         errorMessage.textContent = `Error: ${error.message}`;
-                        errorMessage.style.display = 'block'; // Show error message
-                        placeholderText.style.display = 'block'; // Show placeholder text again on error
+                        errorMessage.style.display = 'block';
+                        placeholderText.style.display = 'block';
                     })
                     .finally(() => {
                         spinner.style.display = 'none';
