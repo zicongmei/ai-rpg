@@ -62,6 +62,17 @@
             font-style: italic;
             color: #666;
             margin-bottom: 10px;
+            padding: 8px;
+            background-color: #eee;
+            border-left: 3px solid #ccc;
+        }
+         .summary-info { /* Specific style for summary messages */
+            font-style: italic;
+            color: #0056b3;
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: #e7f3ff;
+            border-left: 3px solid #007bff;
         }
 
         .scene {
@@ -154,6 +165,12 @@
 
         .info-section strong {
             color: #000;
+        }
+
+        .info-section .summary-stats { /* Style for summary cost/token info */
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed #ccc;
         }
 
         .image-generation-section,
@@ -312,6 +329,30 @@
             font-size: 0.85em;
             color: #555;
         }
+        .summary-list {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #bde0fe;
+            border-radius: 4px;
+            background-color: #edf6ff;
+        }
+        .summary-list h3 {
+             margin-top: 0;
+             color: #0353a4;
+             font-size: 1.1em;
+             margin-bottom: 10px;
+        }
+         .summary-list ul {
+            list-style-type: decimal;
+            padding-left: 20px;
+            margin: 0;
+         }
+         .summary-list li {
+             margin-bottom: 8px;
+             font-size: 0.95em;
+             color: #333;
+         }
+
     </style>
 </head>
 
@@ -327,11 +368,23 @@
         {% endif %}
         {% endwith %}
 
+        {# Display system feedback (including summary messages) #}
         {% if feedback %}
         {% for msg in feedback %}
-        <p class="system-feedback">{{ msg }}</p>
+          {% if msg.startswith('[System: Summarized') or msg.startswith('[System: Summary generation failed') %}
+            <p class="summary-info">{{ msg }}</p>
+          {% elif msg.startswith('[System:') %} {# Catch other potential system messages #}
+             <p class="system-feedback">{{ msg }}</p>
+          {% endif %}
         {% endfor %}
         {% endif %}
+
+        {# Display last summary message persistently if not already in feedback #}
+        {# This might be redundant now that feedback includes summary messages #}
+        {# {% if last_summary and last_summary not in feedback %}
+           <p class="summary-info">{{ last_summary }}</p>
+        {% endif %} #}
+
 
         {% if game_state %}
         <h2>Current Scene</h2>
@@ -375,9 +428,9 @@
             </form>
         </div>
 
-        {# --- Token & Cost Info Display (Moved Below Input) --- #}
+        {# --- Token, Cost & Latency Info Display --- #}
         <div class="info-section">
-            <h3>Usage & Cost</h3>
+            <h3>Usage, Cost & Latency (Game Actions)</h3>
             <span>Last Request Tokens:
                 <strong>Input:</strong> {{ game_state.get('last_input_tokens', 'N/A') }} |
                 <strong>Output:</strong> {{ game_state.get('last_output_tokens', 'N/A') }}
@@ -386,14 +439,40 @@
                 <strong>${{ "{:.6f}".format(last_request_cost) }}</strong>
                 (Model: {{ selected_model }})
             </span>
+            <span>Last Request Latency:
+                <strong>{{ "{:.3f}s".format(last_request_latency) }}</strong>
+            </span>
             <hr style="border: 0; border-top: 1px dashed #ccc; margin: 8px 0;">
             <span>Total Session Tokens:
                 <strong>Input:</strong> {{ game_state.get('total_input_tokens', 'N/A') }} |
                 <strong>Output:</strong> {{ game_state.get('total_output_tokens', 'N/A') }}
             </span>
-             <span>Estimated Total Cost (Using {{ selected_model }} rates):
+             <span>Estimated Total Cost (Game Actions, Using {{ selected_model }} rates):
                 <strong>${{ "{:.6f}".format(estimated_total_cost) }}</strong>
             </span>
+             {# --- Summary Stats --- #}
+             {% if game_state.get('total_summary_cost', 0.0) > 0 or game_state.get('history_summaries') %}
+             <div class="summary-stats">
+                 <h3>Summarization Stats</h3> {# Add header for clarity #}
+                 <span>Total Summary Tokens:
+                    <strong>Input:</strong> {{ game_state.get('total_summary_input_tokens', 'N/A') }} |
+                    <strong>Output:</strong> {{ game_state.get('total_summary_output_tokens', 'N/A') }}
+                 </span>
+                 <span>Total Summary Cost:
+                    <strong>${{ "{:.6f}".format(game_state.get('total_summary_cost', 0.0)) }}</strong>
+                 </span>
+                 <span>Last Summary Latency:
+                    {% if last_summary_latency > 0 %}
+                        <strong>{{ "{:.3f}s".format(last_summary_latency) }}</strong>
+                    {% else %}
+                        N/A
+                    {% endif %}
+                 </span>
+                 <span>Total Summary Latency:
+                     <strong>{{ "{:.3f}s".format(total_summary_latency) }}</strong>
+                 </span>
+             </div>
+             {% endif %}
         </div>
 
         <div class="image-generation-section">
@@ -405,10 +484,24 @@
                 <img id="generated-image" alt="Generated Scene Image">
                 <span id="image-error-message"></span>
             </div>
-            <p><small>Image generation uses Vertex AI Imagen and may incur separate costs. Gemini is used briefly for prompt creation.</small></p>
+            <p><small>Image generation uses Vertex AI Imagen and may incur separate costs. Gemini is used briefly for prompt creation (stats not included above).</small></p>
         </div>
 
         <hr>
+
+        {# --- Display Summaries --- #}
+        {% if game_state.history_summaries %}
+        <div class="summary-list">
+             <h3>History Summaries</h3>
+             <ul>
+                {% for summary in game_state.history_summaries %}
+                 <li>{{ summary | safe }}</li>
+                {% endfor %}
+             </ul>
+             <p><small>These summaries (plus recent turns) are sent to the AI for context.</small></p> {# Clarify context #}
+        </div>
+        {% endif %}
+
 
         <div class="file-ops">
             <h2>Save / Load Game</h2>
@@ -431,21 +524,26 @@
             </form>
         </div>
 
+        {# --- Display Chat History --- #}
         {% if game_state.chat_history %}
         <div class="chat-history">
-            <h3>Chat History</h3>
+             <h3>Full Chat History</h3> {# Simplified heading #}
+             <p><small>Summaries and recent turns (since last summary) are sent to the AI, not this entire history.</small></p> {# Better explanation #}
             <ul>
                 {% for entry in game_state.chat_history %}
                 <li class="{{ entry.get('role', 'unknown') }}">
                     <strong>{{ entry.get('role', 'unknown')|capitalize }}:</strong>
-                    {# Handle potential variations in structure #}
-                    {% if entry.get('parts') and entry['parts'][0] is mapping and entry['parts'][0].get('text') %}
-                       {{ entry['parts'][0]['text'] | safe }}
-                    {% elif entry.get('parts') and entry['parts'][0] is string %}
-                       {{ entry['parts'][0] | safe }}
-                    {% else %}
-                       [No text content]
+                    {# Handle potential variations in structure more robustly #}
+                    {% set part_text = '[No text content]' %}
+                    {% if entry.get('parts') %}
+                        {% set first_part = entry['parts'][0] %}
+                        {% if first_part is mapping and first_part.get('text') %}
+                            {% set part_text = first_part['text'] %}
+                        {% elif first_part is string %}
+                            {% set part_text = first_part %}
+                        {% endif %}
                     {% endif %}
+                    {{ part_text | safe }}
                 </li>
                 {% endfor %}
             </ul>
@@ -549,7 +647,10 @@
         // Scroll chat history to bottom
         const chatHistoryDiv = document.querySelector('.chat-history');
         if (chatHistoryDiv) {
-            chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+            // Scroll after a short delay to allow DOM update
+             setTimeout(() => {
+                 chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+             }, 100);
         }
     </script>
 </body>
