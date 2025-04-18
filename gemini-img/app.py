@@ -11,8 +11,9 @@ app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)  # Or use environment variable
 
 # --- Define Available Models ---
-AVAILABLE_MODELS = game_logic.ALLOWED_MODELS
+AVAILABLE_MODELS = game_logic.MODEL_COSTS.keys()
 DEFAULT_MODEL = game_logic.DEFAULT_MODEL_NAME
+MODEL_COSTS = game_logic.MODEL_COSTS  # Get costs from game_logic
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -62,7 +63,8 @@ def index():
                            available_models=AVAILABLE_MODELS,
                            selected_model=selected_model,
                            last_request_cost=last_request_cost,
-                           estimated_total_cost=estimated_total_cost)
+                           estimated_total_cost=estimated_total_cost,
+                           model_costs=MODEL_COSTS)  # Pass costs to template
 
 
 @app.route('/new_game', methods=['POST'])
@@ -73,8 +75,10 @@ def new_game():
 
     if not initial_prompt:
         flash("Please provide an initial thought or action.", "warning")
+        # Pass model costs even on validation error
         return render_template('index.html', game_state=None, feedback=None,
-                               available_models=AVAILABLE_MODELS, selected_model=selected_model)
+                               available_models=AVAILABLE_MODELS, selected_model=selected_model,
+                               model_costs=MODEL_COSTS)
 
     # start_new_game returns the initial state including costs
     new_game_state, feedback_msg, _, _ = game_logic.start_new_game(
@@ -146,7 +150,8 @@ def generate_image_route():
     # TODO: Consider making this selectable or configurable if cost is a concern
     selected_model_for_prompt = session.get('selected_model', DEFAULT_MODEL)
     b64_image_data, error_message, prompt_input_tokens, prompt_output_tokens = \
-        game_logic.generate_image_with_imagen(last_scene, selected_model_for_prompt)
+        game_logic.generate_image_with_imagen(
+            last_scene, selected_model_for_prompt)
 
     # Optional: Update game state with image prompt token usage if needed
     # This would require updating game_state in session, which GET requests usually don't do.

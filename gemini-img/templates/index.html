@@ -300,10 +300,18 @@
              margin-right: 10px;
              margin-bottom: 5px; /* Add space if wrapped */
              max-width: 350px; /* Limit width */
+             padding: 8px; /* Match other inputs */
+             border: 1px solid #ccc;
+             border-radius: 4px;
         }
          .form-group button {
              margin-bottom: 5px; /* Add space if wrapped */
          }
+         /* Style for model costs in select */
+        .model-cost {
+            font-size: 0.85em;
+            color: #555;
+        }
     </style>
 </head>
 
@@ -355,7 +363,9 @@
                     <option value="{{ model }}" {% if model==selected_model %}selected{% endif %}>
                         {{ model }}
                         {% if model_costs and model in model_costs %}
-                        (In: ${{ "%.2f"|format(model_costs[model].input) }}/Mtk, Out: ${{ "%.2f"|format(model_costs[model].output) }}/Mtk)
+                        <span class="model-cost">
+                            (In: ${{ "%.3f"|format(model_costs[model].input) }}/Mtk, Out: ${{ "%.3f"|format(model_costs[model].output) }}/Mtk)
+                        </span>
                         {% endif %}
                     </option>
                     {% endfor %}
@@ -381,7 +391,7 @@
                 <strong>Input:</strong> {{ game_state.get('total_input_tokens', 'N/A') }} |
                 <strong>Output:</strong> {{ game_state.get('total_output_tokens', 'N/A') }}
             </span>
-             <span>Estimated Total Cost:
+             <span>Estimated Total Cost (Using {{ selected_model }} rates):
                 <strong>${{ "{:.6f}".format(estimated_total_cost) }}</strong>
             </span>
         </div>
@@ -455,7 +465,9 @@
                         <option value="{{ model }}" {% if model==selected_model %}selected{% endif %}>
                             {{ model }}
                             {% if model_costs and model in model_costs %}
-                            (In: ${{ "%.2f"|format(model_costs[model].input) }}/Mtk, Out: ${{ "%.2f"|format(model_costs[model].output) }}/Mtk)
+                            <span class="model-cost">
+                               (In: ${{ "%.3f"|format(model_costs[model].input) }}/Mtk, Out: ${{ "%.3f"|format(model_costs[model].output) }}/Mtk)
+                            </span>
                             {% endif %}
                         </option>
                         {% endfor %}

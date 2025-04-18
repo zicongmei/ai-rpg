@@ -19,22 +19,17 @@ except ImportError:
 
 # --- Constants ---
 # Use consistent naming with dashes as provided in the prompt
-DEFAULT_MODEL_NAME = 'gemini-2.0-flash-lite'
-
-ALLOWED_MODELS = [
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-2.5-pro-preview-03-25'  # Use the exact name if this is the correct ID
-]
+DEFAULT_MODEL_NAME = 'gemini-2.5-flash-preview-04-17'
 
 # --- Cost Data (per 1 Million Tokens) ---
 MODEL_COSTS = {
     'gemini-2.0-flash-lite': {'input': 0.075, 'output': 0.30},
     'gemini-2.0-flash': {'input': 0.10, 'output': 0.40},
-    # Using the name from ALLOWED_MODELS, ensure pricing is correct
     'gemini-2.5-pro-preview-03-25': {'input': 1.25, 'output': 10.0},
-    # Add costs for other models if you use them
+    'gemini-2.5-flash-preview-04-17': {'input': 0.15, 'output': 0.60}
 }
+
+IMAGE_MODEL = "imagen-3.0-generate-002"
 
 SAVE_DIR = os.path.expanduser("~/rpg_saves")
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -85,7 +80,12 @@ except Exception as e:
 
 # --- Model Selection ---
 try:
-    imagen_model_name = "imagegeneration@006"
+    # Initialize Generative AI Client for all Gemini models
+    # No need to initialize individual models here, done in get_gemini_response
+    genai.configure(credentials=credentials)
+    print("Google Generative AI Client configured.")
+
+    imagen_model_name = IMAGE_MODEL
     print(f"Using Imagen model: {imagen_model_name}")
     imagen_model = ImageGenerationModel.from_pretrained(imagen_model_name)
 
@@ -116,7 +116,7 @@ def get_gemini_response(prompt, model_name):
     Sends a prompt to the specified Gemini model and returns the text response
     along with input and output token counts.
     """
-    if model_name not in ALLOWED_MODELS:
+    if model_name not in MODEL_COSTS.keys():
         print(
             f"WARN: Invalid model '{model_name}' requested. Using default '{DEFAULT_MODEL_NAME}'.")
         model_name = DEFAULT_MODEL_NAME
@@ -125,7 +125,9 @@ def get_gemini_response(prompt, model_name):
     input_tokens = 0
     output_tokens = 0
     try:
-        model_to_use = genai.GenerativeModel(model_name)
+        # Use the correct model name format for the API
+        api_model_name = f"models/{model_name}"
+        model_to_use = genai.GenerativeModel(api_model_name)
         response = model_to_use.generate_content(prompt)
 
         if hasattr(response, 'usage_metadata'):
