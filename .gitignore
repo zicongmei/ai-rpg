@@ -3,3 +3,6 @@ __pycache__/
 generated_image.png
 
 saves/
+dist/
+node_modules/
+.ai/
